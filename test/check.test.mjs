@@ -8,6 +8,7 @@ import {
   jaccard,
   bigrams,
   parseArgs,
+  checkSchema,
 } from '../src/check.mjs';
 
 // ---- frontmatter ----
@@ -131,4 +132,39 @@ test('parseArgs: --threshold / --allow を分離しパスを残す', () => {
   assert.deepEqual(paths, ['.claude/skills']);
   assert.equal(threshold, 0.8);
   assert.ok(allow.has('x') && allow.has('y'));
+});
+
+// ---- frontmatter スキーマ検査 ----
+
+test('未知キーのタイポを提案（allowed_tools → allowed-tools）', () => {
+  const f = checkSchema({ name: 'ok', description: 'x', allowed_tools: 'Read' });
+  const hit = f.find((x) => x.kind === 'schema');
+  assert.ok(hit);
+  assert.match(hit.msg, /allowed-tools/);
+});
+
+test('正しいキーだけなら schema 指摘なし', () => {
+  const f = checkSchema({ name: 'ok', description: 'x', 'allowed-tools': 'Read, Write, Bash(git:*)' });
+  assert.equal(f.filter((x) => x.kind === 'schema' || x.kind === 'allowed-tools').length, 0);
+});
+
+test('allowed-tools の空要素を検出', () => {
+  const f = checkSchema({ name: 'ok', description: 'x', 'allowed-tools': 'Read,,Write' });
+  assert.ok(f.some((x) => x.kind === 'allowed-tools'));
+});
+
+test('name とディレクトリ名の不一致を検出', () => {
+  const f = checkSchema({ name: 'pdf-reader', description: 'x' }, 'pdf_reader');
+  assert.ok(f.some((x) => x.kind === 'name'));
+});
+
+test('name とディレクトリ名が一致すれば指摘なし', () => {
+  const f = checkSchema({ name: 'pdf-reader', description: 'x' }, 'pdf-reader');
+  assert.equal(f.length, 0);
+});
+
+test('checkSkill 経由でスキーマ指摘が出る', () => {
+  const fm = parseFrontmatter('---\nname: ok\ndescription: 使う\ndescrption: typo\n---\n');
+  const f = checkSkill({ ...fm, exists: () => true, dirName: 'ok' });
+  assert.ok(f.some((x) => x.kind === 'schema' && /description/.test(x.msg)));
 });

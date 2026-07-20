@@ -10,7 +10,7 @@
 //   node src/check.mjs [path ...]   # path = SKILL.md か、SKILL.md を含むディレクトリ
 //   省略時は .claude/skills/ か skills/ を探索、無ければカレントを走査。
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
-import { resolve, join, dirname } from 'node:path';
+import { resolve, join, dirname, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const CODE_EXT =
@@ -75,8 +75,51 @@ export function scanRefs(text, exists = () => true) {
 
 const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-/** スキル単体の検査：frontmatter 妥当性 + 参照整合。 */
-export function checkSkill({ hasFrontmatter, data = {}, body = '', exists = () => true }) {
+/** レーベンシュタイン距離（タイポ提案用）。 */
+export function lev(a, b) {
+  const m = a.length;
+  const n = b.length;
+  const d = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) d[i][0] = i;
+  for (let j = 0; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[m][n];
+}
+
+// Anthropic Agent Skills の frontmatter で認識するキー。
+export const KNOWN_KEYS = new Set(['name', 'description', 'allowed-tools', 'license', 'metadata', 'version']);
+
+/** frontmatter スキーマ検査：未知キー(タイポ)・allowed-tools 形式・name とディレクトリ名の一致。 */
+export function checkSchema(data = {}, dirName = null) {
+  const findings = [];
+  for (const key of Object.keys(data)) {
+    if (KNOWN_KEYS.has(key)) continue;
+    const near = [...KNOWN_KEYS].sort((a, b) => lev(a, key) - lev(b, key))[0];
+    const hint = near && lev(near, key) <= 2 ? `（"${near}" では？）` : '';
+    findings.push({ ln: 1, kind: 'schema', msg: `未知の frontmatter キー "${key}"${hint}` });
+  }
+  const tools = data['allowed-tools'];
+  if (tools !== undefined && String(tools).trim() !== '') {
+    const items = String(tools).split(',').map((s) => s.trim());
+    if (items.some((x) => x === '')) {
+      findings.push({ ln: 1, kind: 'allowed-tools', msg: 'allowed-tools に空の要素があります（カンマ区切り）' });
+    }
+    for (const it of items) {
+      if (it && !/^[A-Za-z0-9_.:()*\- ]+$/.test(it)) {
+        findings.push({ ln: 1, kind: 'allowed-tools', msg: `allowed-tools の要素 "${it}" が不正な形式です` });
+      }
+    }
+  }
+  if (dirName && data.name && data.name !== dirName) {
+    findings.push({ ln: 1, kind: 'name', msg: `name "${data.name}" がスキルのディレクトリ名 "${dirName}" と一致しません` });
+  }
+  return findings;
+}
+
+/** スキル単体の検査：frontmatter 妥当性 + スキーマ + 参照整合。 */
+export function checkSkill({ hasFrontmatter, data = {}, body = '', exists = () => true, dirName = null }) {
   const findings = [];
   if (!hasFrontmatter) {
     findings.push({ ln: 1, kind: 'frontmatter', msg: 'YAML frontmatter (--- … ---) がありません' });
@@ -97,6 +140,7 @@ export function checkSkill({ hasFrontmatter, data = {}, body = '', exists = () =
   } else if (data.description.length > 1024) {
     findings.push({ ln: 1, kind: 'description', msg: `description が1024文字を超えています (${data.description.length})` });
   }
+  findings.push(...checkSchema(data, dirName));
   findings.push(...scanRefs(body, exists));
   return findings;
 }
@@ -254,7 +298,7 @@ export function main(argv) {
     }
     const fm = parseFrontmatter(text);
     const dir = dirname(file);
-    const findings = checkSkill({ ...fm, exists: (p) => existsSync(resolve(dir, p)) });
+    const findings = checkSkill({ ...fm, exists: (p) => existsSync(resolve(dir, p)), dirName: basename(dir) });
     skills.push({ file, data: fm.data });
     if (findings.length === 0) console.log(`✓ ${file}`);
     total += report(file, findings, inActions);
