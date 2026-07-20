@@ -17,22 +17,41 @@ const CODE_EXT =
   /\.(m?[jt]sx?|json|ya?ml|toml|md|txt|sh|py|rb|go|rs|php|html?|css|lock|env|cfg|ini|xml|svg|png|jpe?g|gif|webp|pdf|csv)$/i;
 
 /** SKILL.md 冒頭の YAML frontmatter を最小パース（zero-dep・単一行 key: value のみ）。 */
+function stripQuotes(v) {
+  v = v.trim();
+  if (v.length >= 2 && ((v[0] === '"' && v.endsWith('"')) || (v[0] === "'" && v.endsWith("'")))) return v.slice(1, -1);
+  return v;
+}
+
 export function parseFrontmatter(text) {
   let t = String(text);
   if (t.charCodeAt(0) === 0xfeff) t = t.slice(1); // 先頭 BOM を剥がす
   const m = t.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-  if (!m) return { hasFrontmatter: false, data: {}, body: t };
+  if (!m) return { hasFrontmatter: false, data: {}, body: t, dupes: [] };
   const data = {};
-  for (const line of m[1].split(/\r?\n/)) {
-    const mm = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+  const dupes = [];
+  const set = (k, v) => {
+    if (Object.prototype.hasOwnProperty.call(data, k)) dupes.push(k);
+    data[k] = v;
+  };
+  const lines = m[1].split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const mm = lines[i].match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
     if (!mm) continue;
-    let v = mm[2].trim();
-    if (v.length >= 2 && ((v[0] === '"' && v.endsWith('"')) || (v[0] === "'" && v.endsWith("'")))) {
-      v = v.slice(1, -1);
+    const key = mm[1];
+    // 値が空 + 次行がインデント = 1段ネストのオブジェクト（metadata: など）
+    if (mm[2].trim() === '' && i + 1 < lines.length && /^\s+\S/.test(lines[i + 1])) {
+      const obj = {};
+      while (i + 1 < lines.length && /^\s+\S/.test(lines[i + 1])) {
+        const sub = lines[++i].match(/^\s+([A-Za-z0-9_-]+):\s*(.*)$/);
+        if (sub) obj[sub[1]] = stripQuotes(sub[2]);
+      }
+      set(key, obj);
+    } else {
+      set(key, stripQuotes(mm[2]));
     }
-    data[mm[1]] = v;
   }
-  return { hasFrontmatter: true, data, body: m[2] };
+  return { hasFrontmatter: true, data, body: m[2], dupes };
 }
 
 export function looksLikePath(t) {
@@ -115,15 +134,40 @@ export function checkSchema(data = {}, dirName = null) {
   if (dirName && data.name && data.name !== dirName) {
     findings.push({ ln: 1, kind: 'name', msg: `name "${data.name}" がスキルのディレクトリ名 "${dirName}" と一致しません` });
   }
+  // metadata が入れ子オブジェクトなら、その中身も検査（深いスキーマ）
+  if (data.metadata && typeof data.metadata === 'object') {
+    for (const [k, v] of Object.entries(data.metadata)) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(k)) {
+        findings.push({ ln: 1, kind: 'metadata', msg: `metadata のキー "${k}" が不正な形式です` });
+      }
+      if (v === '' || v == null) {
+        findings.push({ ln: 1, kind: 'metadata', msg: `metadata.${k} の値が空です` });
+      }
+    }
+  }
   return findings;
 }
 
+/** references/ 配下のファイル群の内部参照を検査（純粋・テスト可能）。 */
+export function checkReferenceFiles(refFiles) {
+  const out = [];
+  for (const rf of refFiles) {
+    for (const f of scanRefs(rf.text, rf.exists)) {
+      out.push({ file: rf.file, ...f });
+    }
+  }
+  return out;
+}
+
 /** スキル単体の検査：frontmatter 妥当性 + スキーマ + 参照整合。 */
-export function checkSkill({ hasFrontmatter, data = {}, body = '', exists = () => true, dirName = null }) {
+export function checkSkill({ hasFrontmatter, data = {}, body = '', exists = () => true, dirName = null, dupes = [] }) {
   const findings = [];
   if (!hasFrontmatter) {
     findings.push({ ln: 1, kind: 'frontmatter', msg: 'YAML frontmatter (--- … ---) がありません' });
     return findings;
+  }
+  for (const k of dupes) {
+    findings.push({ ln: 1, kind: 'duplicate-key', msg: `frontmatter に重複キー "${k}" があります` });
   }
   if (!data.name) {
     findings.push({ ln: 1, kind: 'frontmatter', msg: 'frontmatter に name がありません' });
@@ -248,6 +292,29 @@ function defaultTargets() {
   return cands.length ? cands : ['.'];
 }
 
+/** スキルディレクトリ配下 references/ の markdown ファイルを集める。 */
+function collectRefMarkdown(skillDir) {
+  const out = [];
+  const refDir = join(skillDir, 'references');
+  if (!existsSync(refDir)) return out;
+  const walk = (d, depth) => {
+    if (depth > 5) return;
+    let entries;
+    try {
+      entries = readdirSync(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const full = join(d, e.name);
+      if (e.isDirectory()) walk(full, depth + 1);
+      else if (/\.md$/i.test(e.name)) out.push(full);
+    }
+  };
+  walk(refDir, 0);
+  return out;
+}
+
 /** argv から --threshold / --allow を取り出し、残りをパスとして返す。 */
 export function parseArgs(argv) {
   const paths = [];
@@ -300,8 +367,29 @@ export function main(argv) {
     const dir = dirname(file);
     const findings = checkSkill({ ...fm, exists: (p) => existsSync(resolve(dir, p)), dirName: basename(dir) });
     skills.push({ file, data: fm.data });
-    if (findings.length === 0) console.log(`✓ ${file}`);
+
+    // references/ 配下の markdown の内部参照（相互リンク・スクリプト参照）を検査
+    const refInputs = [];
+    for (const rp of collectRefMarkdown(dir)) {
+      let rtext;
+      try {
+        rtext = readFileSync(rp, 'utf8');
+      } catch {
+        continue;
+      }
+      const rdir = dirname(rp);
+      refInputs.push({ file: rp, text: rtext, exists: (p) => existsSync(resolve(rdir, p)) });
+    }
+    const refFindings = checkReferenceFiles(refInputs);
+
+    if (findings.length === 0 && refFindings.length === 0) console.log(`✓ ${file}`);
     total += report(file, findings, inActions);
+    const byFile = new Map();
+    for (const rf of refFindings) {
+      if (!byFile.has(rf.file)) byFile.set(rf.file, []);
+      byFile.get(rf.file).push(rf);
+    }
+    for (const [rfile, rfs] of byFile) total += report(rfile, rfs, inActions);
   }
   // スキル間の衝突
   for (const c of detectCollisions(skills, { threshold, allow })) {

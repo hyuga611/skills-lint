@@ -9,6 +9,7 @@ import {
   bigrams,
   parseArgs,
   checkSchema,
+  checkReferenceFiles,
 } from '../src/check.mjs';
 
 // ---- frontmatter ----
@@ -167,4 +168,46 @@ test('checkSkill 経由でスキーマ指摘が出る', () => {
   const fm = parseFrontmatter('---\nname: ok\ndescription: 使う\ndescrption: typo\n---\n');
   const f = checkSkill({ ...fm, exists: () => true, dirName: 'ok' });
   assert.ok(f.some((x) => x.kind === 'schema' && /description/.test(x.msg)));
+});
+
+// ---- references/ 相互リンク検査 ----
+
+test('references/ の壊れた内部参照を検出', () => {
+  const refFiles = [
+    { file: 'skill/references/a.md', text: '関連 [b](b.md) と `../scripts/x.py`', exists: (p) => p === 'b.md' },
+  ];
+  const f = checkReferenceFiles(refFiles);
+  assert.equal(f.length, 1);
+  assert.equal(f[0].file, 'skill/references/a.md');
+  assert.match(f[0].msg, /x\.py/);
+});
+
+test('references/ の内部参照がすべて解決すれば0件', () => {
+  const f = checkReferenceFiles([{ file: 'r/a.md', text: '[b](b.md)', exists: () => true }]);
+  assert.equal(f.length, 0);
+});
+
+// ---- metadata 入れ子スキーマ・重複キー ----
+
+test('parseFrontmatter: metadata の入れ子オブジェクトを解釈', () => {
+  const fm = parseFrontmatter('---\nname: s\ndescription: d\nmetadata:\n  type: user\n  node: memory\n---\n本文');
+  assert.equal(typeof fm.data.metadata, 'object');
+  assert.equal(fm.data.metadata.type, 'user');
+  assert.equal(fm.data.metadata.node, 'memory');
+});
+
+test('parseFrontmatter: 重複キーを dupes に記録', () => {
+  const fm = parseFrontmatter('---\nname: a\nname: b\ndescription: d\n---\n');
+  assert.ok(fm.dupes.includes('name'));
+});
+
+test('checkSchema: metadata の空値・不正キーを検出', () => {
+  const f = checkSchema({ name: 'ok', description: 'x', metadata: { good: 'v', empty: '' } });
+  assert.ok(f.some((x) => x.kind === 'metadata'));
+});
+
+test('checkSkill: 重複キーを検出', () => {
+  const fm = parseFrontmatter('---\nname: ok\nname: dup\ndescription: d\n---\n');
+  const f = checkSkill({ ...fm, exists: () => true, dirName: 'ok' });
+  assert.ok(f.some((x) => x.kind === 'duplicate-key'));
 });

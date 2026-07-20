@@ -12,7 +12,8 @@ Anthropic Agent Skills 用の依存ゼロ・言語非依存リンタ。**参照�
 
 - **Referential integrity** — back-quoted paths and `[text](path)` links in the body (`scripts/`, `references/`, `assets/`) must exist on disk. Language-agnostic.
 - **Frontmatter** — `name` present and `^[a-z0-9-]+$` (≤64 chars), `description` present (≤1024 chars).
-- **Metadata schema** — unknown-key typos (`allowed_tools` → suggests `allowed-tools`), `allowed-tools` format, and `name` matching the skill's directory name.
+- **Metadata schema** — unknown-key typos (`allowed_tools` → suggests `allowed-tools`), `allowed-tools` format, `name` matching the skill's directory name, plus nested `metadata:` validation and duplicate-key detection.
+- **`references/` cross-links** — markdown files under a skill's `references/` are scanned too; their internal links and script references must resolve.
 - **Collisions across skills** — duplicate `name` (install clash), and `description` pairs that are near-duplicates (character-bigram similarity ≥ 0.7 → the agent mis-fires between them). Works for Japanese and English triggers.
 
 ## Use as a GitHub Action / CIで使う（定着の本体）
@@ -62,5 +63,6 @@ node src/check.mjs examples/good     # 正しい例を検査 → exit 0
 - [x] **GitHub Action** (`action.yml`) + inline PR annotations + self-CI
 - [x] Configurable similarity threshold + allowlist (`--threshold` / `--allow`, or `SKILLS_LINT_THRESHOLD`)
 - [x] Frontmatter metadata schema — unknown-key typos, `allowed-tools` format, `name`↔directory match
+- [x] `references/` cross-link integrity + nested `metadata:` schema & duplicate-key detection
 
 MIT
