@@ -1,0 +1,105 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  parseFrontmatter,
+  checkSkill,
+  detectCollisions,
+  scanRefs,
+  jaccard,
+  bigrams,
+} from '../src/check.mjs';
+
+// ---- frontmatter ----
+
+test('frontmatter を name/description に分解', () => {
+  const fm = parseFrontmatter('---\nname: my-skill\ndescription: "Use this when X"\n---\n本文');
+  assert.equal(fm.hasFrontmatter, true);
+  assert.equal(fm.data.name, 'my-skill');
+  assert.equal(fm.data.description, 'Use this when X');
+  assert.equal(fm.body.trim(), '本文');
+});
+
+test('frontmatter が無ければ hasFrontmatter=false', () => {
+  const fm = parseFrontmatter('# ただの markdown');
+  assert.equal(fm.hasFrontmatter, false);
+});
+
+// ---- 単体チェック ----
+
+test('frontmatter 無しを検出', () => {
+  const f = checkSkill(parseFrontmatter('# no frontmatter'));
+  assert.equal(f.length, 1);
+  assert.equal(f[0].kind, 'frontmatter');
+});
+
+test('name 欠落を検出', () => {
+  const f = checkSkill({ ...parseFrontmatter('---\ndescription: x\n---\n'), exists: () => true });
+  assert.ok(f.some((x) => x.kind === 'frontmatter' && /name/.test(x.msg)));
+});
+
+test('name の形式違反を検出（大文字/アンダースコア）', () => {
+  const f = checkSkill({ ...parseFrontmatter('---\nname: My_Skill\ndescription: x\n---\n'), exists: () => true });
+  assert.ok(f.some((x) => x.kind === 'name'));
+});
+
+test('description 欠落を検出', () => {
+  const f = checkSkill({ ...parseFrontmatter('---\nname: ok-skill\n---\n'), exists: () => true });
+  assert.ok(f.some((x) => x.kind === 'description'));
+});
+
+test('本文の壊れた参照を検出（scripts/ 参照整合）', () => {
+  const fm = parseFrontmatter('---\nname: ok-skill\ndescription: 使うとき\n---\n実行: `scripts/run.py`');
+  const f = checkSkill({ ...fm, exists: (p) => p !== 'scripts/run.py' });
+  assert.equal(f.filter((x) => x.kind === 'path').length, 1);
+});
+
+test('整合が取れていれば0件', () => {
+  const fm = parseFrontmatter('---\nname: ok-skill\ndescription: 使うとき\n---\n参照 `references/a.md` と [b](assets/b.png)');
+  const f = checkSkill({ ...fm, exists: () => true });
+  assert.equal(f.length, 0);
+});
+
+// ---- 参照整合（reflint と同じエンジン）----
+
+test('markdown リンク先の欠落を検出', () => {
+  const f = scanRefs('- [doc](references/guide.md)', (p) => p !== 'references/guide.md');
+  assert.equal(f.length, 1);
+  assert.equal(f[0].kind, 'link');
+});
+
+test('外部URL・アンカーは無視', () => {
+  const f = scanRefs('[a](https://x.example/y) [b](#top)', () => false);
+  assert.equal(f.length, 0);
+});
+
+// ---- 衝突検出 ----
+
+test('name 重複を検出（インストール衝突）', () => {
+  const f = detectCollisions([
+    { file: 'a/SKILL.md', data: { name: 'dup', description: 'aaaa' } },
+    { file: 'b/SKILL.md', data: { name: 'dup', description: 'bbbb' } },
+  ]);
+  assert.ok(f.some((x) => x.kind === 'dup-name'));
+});
+
+test('description が近すぎるトリガ衝突を検出', () => {
+  const desc = 'PDFファイルを読み取って要約するときに使う。pdf 抽出 テキスト 変換 に対応。';
+  const f = detectCollisions([
+    { file: 'a/SKILL.md', data: { name: 'pdf-a', description: desc } },
+    { file: 'b/SKILL.md', data: { name: 'pdf-b', description: desc + '（ほぼ同じ）' } },
+  ]);
+  assert.ok(f.some((x) => x.kind === 'trigger-overlap'));
+});
+
+test('別物の description は衝突しない（誤検出しない）', () => {
+  const f = detectCollisions([
+    { file: 'a/SKILL.md', data: { name: 'pdf', description: 'PDFを読み取って要約する' } },
+    { file: 'b/SKILL.md', data: { name: 'xlsx', description: 'Excelの表を作成・集計する' } },
+  ]);
+  assert.equal(f.filter((x) => x.kind === 'trigger-overlap').length, 0);
+});
+
+test('jaccard/bigrams の基本性質', () => {
+  assert.equal(jaccard(bigrams('abcd'), bigrams('abcd')), 1);
+  assert.equal(jaccard(bigrams('abcd'), bigrams('wxyz')), 0);
+});

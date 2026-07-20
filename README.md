@@ -1,0 +1,63 @@
+# skills-lint
+
+**Your Agent Skills (`SKILL.md`) probably lie, or shadow each other. Catch it in CI.**
+`skills-lint` is a zero-dependency, language-agnostic linter for [Anthropic Agent Skills](https://www.anthropic.com/news/skills). It fails your PR when a `SKILL.md` references a script/file that doesn't exist, or when two skills collide — same `name`, or descriptions so similar the agent can't tell which to fire.
+
+**あなたの `SKILL.md`、存在しないスクリプトを指したり、別スキルと発火が被っていませんか？**
+Anthropic Agent Skills 用の依存ゼロ・言語非依存リンタ。**参照整合**（本文が指すファイルの実在）と**衝突検出**（`name` 重複・`description` の近すぎ＝トリガ取り違え）を CI で毎PR落とす。
+
+---
+
+## What it checks / 何を見るか
+
+- **Referential integrity** — back-quoted paths and `[text](path)` links in the body (`scripts/`, `references/`, `assets/`) must exist on disk. Language-agnostic.
+- **Frontmatter** — `name` present and `^[a-z0-9-]+$` (≤64 chars), `description` present (≤1024 chars).
+- **Collisions across skills** — duplicate `name` (install clash), and `description` pairs that are near-duplicates (character-bigram similarity ≥ 0.7 → the agent mis-fires between them). Works for Japanese and English triggers.
+
+## Use as a GitHub Action / CIで使う（定着の本体）
+
+```yaml
+# .github/workflows/skills-lint.yml
+name: skills-lint
+on: [push, pull_request]
+jobs:
+  skills-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hyuga611/skills-lint@v1
+        with:
+          paths: .claude/skills   # optional; defaults to .claude/skills / skills
+```
+
+Findings show up as inline PR annotations and the job fails (exit 1), so a broken or colliding skill can't be merged.
+
+## Use as a CLI / ローカルで使う
+
+```bash
+npx @hyuga/skills-lint                 # .claude/skills / skills を自動探索
+npx @hyuga/skills-lint path/to/skills  # ディレクトリや SKILL.md を指定
+# npm i -g @hyuga/skills-lint すると `skills-lint` コマンドで使えます
+```
+
+## Why collisions matter / なぜ衝突が問題か
+
+Skills fire from their `description`. Ship two skills whose descriptions overlap on the same trigger and the agent picks the wrong one — silently. `skills-lint` surfaces that pair before merge. (Duplicate `name`s simply clash on install.)
+
+## Dev
+
+```bash
+node --test                          # unit tests
+npm run poc                          # examples/bad で検出デモ → exit 1
+node src/check.mjs examples/good     # 正しい例を検査 → exit 0
+```
+
+## Roadmap
+
+- [x] Referential integrity of `SKILL.md` body references (zero-dep) — `src/check.mjs`
+- [x] Name-collision + description near-duplicate (language-agnostic bigram similarity)
+- [x] **GitHub Action** (`action.yml`) + inline PR annotations + self-CI
+- [ ] Configurable similarity threshold / allowlist
+- [ ] Frontmatter `allowed-tools` / metadata schema checks
+
+MIT

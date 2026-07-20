@@ -1,0 +1,30 @@
+{
+  "name": "@hyuga/skills-lint",
+  "version": "0.1.0",
+  "description": "Lint Anthropic Agent Skills (SKILL.md) in CI: referential integrity of referenced files + name/trigger collisions between skills. Language-agnostic, zero-dependency.",
+  "type": "module",
+  "bin": {
+    "skills-lint": "src/check.mjs"
+  },
+  "files": [
+    "src",
+    "action.yml"
+  ],
+  "scripts": {
+    "poc": "node src/check.mjs examples/bad",
+    "test": "node --test"
+  },
+  "keywords": [
+    "skill.md",
+    "agent-skills",
+    "claude",
+    "ai",
+    "agent",
+    "linter",
+    "ci",
+    "reference-integrity",
+    "trigger-collision",
+    "language-agnostic"
+  ],
+  "license": "MIT"
+}

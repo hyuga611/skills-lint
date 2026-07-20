@@ -1,0 +1,21 @@
+name: 'skills-lint SKILL.md linter'
+description: 'Lint SKILL.md in CI: referenced files must exist + detect name/trigger collisions between Agent Skills. Zero-dep.'
+author: 'hyuga611'
+branding:
+  icon: 'check-square'
+  color: 'purple'
+inputs:
+  paths:
+    description: 'Space-separated files or dirs to scan for SKILL.md. Default: .claude/skills / skills, else the repo.'
+    required: false
+    default: ''
+runs:
+  using: 'composite'
+  steps:
+    - name: Run skills-lint
+      shell: bash
+      # Pass the caller input via env (NOT ${{ }} into the script) to avoid template/shell injection.
+      # $PATHS is intentionally unquoted so multiple space-separated paths split into separate argv.
+      env:
+        PATHS: ${{ inputs.paths }}
+      run: node "$GITHUB_ACTION_PATH/src/check.mjs" $PATHS
