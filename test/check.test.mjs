@@ -211,3 +211,14 @@ test('checkSkill: 重複キーを検出', () => {
   const f = checkSkill({ ...fm, exists: () => true, dirName: 'ok' });
   assert.ok(f.some((x) => x.kind === 'duplicate-key'));
 });
+
+test('Windows/NAS 絶対パスは参照検査の対象外（実スキルで判明したNAS stallの修正）', () => {
+  const winPath = String.raw`X:\01\a.md`;
+  const f = scanRefs('参照 `' + winPath + '` と `C:/x/b.md`', () => false);
+  assert.equal(f.length, 0);
+});
+
+test('スラッシュコマンド/プレースホルダは参照検査の対象外（実スキルで判明したFP）', () => {
+  const f = scanRefs('`/newpage` と `brief_<slug>.md`', () => false);
+  assert.equal(f.length, 0);
+});
