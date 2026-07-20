@@ -118,8 +118,14 @@ export function jaccard(a, b) {
 // 誤検出ゼロ優先で高めのしきい値。近すぎる description = 同じ入力で取り違える。
 export const TRIGGER_THRESHOLD = 0.7;
 
-/** スキル間の衝突：name 重複（確実） + description 近似（トリガ取り違え）。 */
-export function detectCollisions(skills, threshold = TRIGGER_THRESHOLD) {
+/**
+ * スキル間の衝突：name 重複（確実） + description 近似（トリガ取り違え）。
+ * opts: { threshold=0.7, allow=Set<name> }。後方互換で数値を threshold として受ける。
+ */
+export function detectCollisions(skills, opts = {}) {
+  if (typeof opts === 'number') opts = { threshold: opts };
+  const threshold = opts.threshold ?? TRIGGER_THRESHOLD;
+  const allow = opts.allow ?? new Set();
   const findings = [];
   const byName = new Map();
   for (const s of skills) {
@@ -134,13 +140,15 @@ export function detectCollisions(skills, threshold = TRIGGER_THRESHOLD) {
   const grams = skills.map((s) => bigrams(s.data && s.data.description));
   for (let i = 0; i < skills.length; i++) {
     for (let j = i + 1; j < skills.length; j++) {
+      const ni = skills[i].data && skills[i].data.name;
+      const nj = skills[j].data && skills[j].data.name;
+      if (allow.has(ni) || allow.has(nj)) continue; // 許可リストのスキルは衝突対象外
       const sim = jaccard(grams[i], grams[j]);
       if (sim >= threshold) {
-        const a = (skills[i].data && skills[i].data.name) || skills[i].file;
         findings.push({
           file: skills[j].file,
           kind: 'trigger-overlap',
-          msg: `description が ${a} と高類似 (${sim.toFixed(2)}) — 同じ入力で取り違える恐れ`,
+          msg: `description が ${ni || skills[i].file} と高類似 (${sim.toFixed(2)}) — 同じ入力で取り違える恐れ`,
         });
       }
     }
@@ -196,6 +204,25 @@ function defaultTargets() {
   return cands.length ? cands : ['.'];
 }
 
+/** argv から --threshold / --allow を取り出し、残りをパスとして返す。 */
+export function parseArgs(argv) {
+  const paths = [];
+  const allow = new Set();
+  let threshold = process.env.SKILLS_LINT_THRESHOLD ? parseFloat(process.env.SKILLS_LINT_THRESHOLD) : undefined;
+  const addAllow = (s) => (s || '').split(',').forEach((n) => n.trim() && allow.add(n.trim()));
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--') continue;
+    if (a === '--threshold') threshold = parseFloat(argv[++i]);
+    else if (a.startsWith('--threshold=')) threshold = parseFloat(a.slice(12));
+    else if (a === '--allow') addAllow(argv[++i]);
+    else if (a.startsWith('--allow=')) addAllow(a.slice(8));
+    else paths.push(a);
+  }
+  if (Number.isNaN(threshold)) threshold = undefined;
+  return { paths, threshold, allow };
+}
+
 function report(file, findings, inActions) {
   if (findings.length === 0) return 0;
   console.error(`✗ ${file} — ${findings.length} 件`);
@@ -209,8 +236,8 @@ function report(file, findings, inActions) {
 
 export function main(argv) {
   const inActions = process.env.GITHUB_ACTIONS === 'true';
-  const args = argv.filter((a) => a !== '--');
-  const files = findSkillFiles(args.length ? args : defaultTargets());
+  const { paths, threshold, allow } = parseArgs(argv);
+  const files = findSkillFiles(paths.length ? paths : defaultTargets());
   if (files.length === 0) {
     console.log('skills-lint: SKILL.md が見つかりません（.claude/skills/ か skills/、または引数で指定）。スキップ。');
     return 0;
@@ -233,7 +260,7 @@ export function main(argv) {
     total += report(file, findings, inActions);
   }
   // スキル間の衝突
-  for (const c of detectCollisions(skills)) {
+  for (const c of detectCollisions(skills, { threshold, allow })) {
     console.error(`  ${c.file}:1\t${c.msg}`);
     if (inActions) console.log(`::error file=${c.file},line=1::${c.msg.replace(/\r?\n/g, ' ')}`);
     total += 1;

@@ -7,6 +7,7 @@ import {
   scanRefs,
   jaccard,
   bigrams,
+  parseArgs,
 } from '../src/check.mjs';
 
 // ---- frontmatter ----
@@ -102,4 +103,32 @@ test('別物の description は衝突しない（誤検出しない）', () => {
 test('jaccard/bigrams の基本性質', () => {
   assert.equal(jaccard(bigrams('abcd'), bigrams('abcd')), 1);
   assert.equal(jaccard(bigrams('abcd'), bigrams('wxyz')), 0);
+});
+
+// ---- しきい値・許可リスト（設定オプション）----
+
+const nearPair = [
+  { file: 'a/SKILL.md', data: { name: 'pdf-a', description: 'PDFを読み取って要約する。抽出とテキスト化に対応。' } },
+  { file: 'b/SKILL.md', data: { name: 'pdf-b', description: 'PDFを読み取って要約する。抽出とテキスト化に少し対応。' } },
+];
+
+test('threshold を上げると衝突判定が緩む', () => {
+  assert.ok(detectCollisions(nearPair, { threshold: 0.5 }).some((x) => x.kind === 'trigger-overlap'));
+  assert.equal(detectCollisions(nearPair, { threshold: 0.99 }).filter((x) => x.kind === 'trigger-overlap').length, 0);
+});
+
+test('後方互換：第2引数に数値(threshold)を渡せる', () => {
+  assert.equal(detectCollisions(nearPair, 0.99).filter((x) => x.kind === 'trigger-overlap').length, 0);
+});
+
+test('allow に入れたスキルは衝突対象から除外', () => {
+  const allow = new Set(['pdf-a']);
+  assert.equal(detectCollisions(nearPair, { threshold: 0.3, allow }).filter((x) => x.kind === 'trigger-overlap').length, 0);
+});
+
+test('parseArgs: --threshold / --allow を分離しパスを残す', () => {
+  const { paths, threshold, allow } = parseArgs(['.claude/skills', '--threshold', '0.8', '--allow', 'x,y']);
+  assert.deepEqual(paths, ['.claude/skills']);
+  assert.equal(threshold, 0.8);
+  assert.ok(allow.has('x') && allow.has('y'));
 });

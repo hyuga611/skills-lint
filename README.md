@@ -35,8 +35,10 @@ Findings show up as inline PR annotations and the job fails (exit 1), so a broke
 ## Use as a CLI / ローカルで使う
 
 ```bash
-npx @hyuga/skills-lint                 # .claude/skills / skills を自動探索
-npx @hyuga/skills-lint path/to/skills  # ディレクトリや SKILL.md を指定
+npx @hyuga/skills-lint                          # .claude/skills / skills を自動探索
+npx @hyuga/skills-lint path/to/skills           # ディレクトリや SKILL.md を指定
+npx @hyuga/skills-lint --threshold 0.8          # 衝突判定のしきい値を変更（既定 0.7）
+npx @hyuga/skills-lint --allow legacy-a,legacy-b # 指定スキルは衝突検査から除外
 # npm i -g @hyuga/skills-lint すると `skills-lint` コマンドで使えます
 ```
 
@@ -57,7 +59,7 @@ node src/check.mjs examples/good     # 正しい例を検査 → exit 0
 - [x] Referential integrity of `SKILL.md` body references (zero-dep) — `src/check.mjs`
 - [x] Name-collision + description near-duplicate (language-agnostic bigram similarity)
 - [x] **GitHub Action** (`action.yml`) + inline PR annotations + self-CI
-- [ ] Configurable similarity threshold / allowlist
+- [x] Configurable similarity threshold + allowlist (`--threshold` / `--allow`, or `SKILLS_LINT_THRESHOLD`)
 - [ ] Frontmatter `allowed-tools` / metadata schema checks
 
 MIT
