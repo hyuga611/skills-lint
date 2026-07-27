@@ -78,7 +78,7 @@ export function scanRefs(text, exists = () => true) {
         const t = m[1].trim();
         if (!looksLikePath(t)) continue;
         if (!exists(t.replace(/^\.\//, ''))) {
-          findings.push({ ln, kind: 'path', msg: `参照 \`${t}\` が存在しません` });
+          findings.push({ ln, kind: 'path', msg: `reference \`${t}\` does not exist` });
         }
       }
       // 2) markdown リンク [text](target)
@@ -89,7 +89,7 @@ export function scanRefs(text, exists = () => true) {
         if (!looksLikePath(target)) continue;
         const rel = target.replace(/[#?].*$/, '').replace(/^\.\//, '');
         if (rel && !exists(rel)) {
-          findings.push({ ln, kind: 'link', msg: `リンク先 \`${target}\` が存在しません` });
+          findings.push({ ln, kind: 'link', msg: `link target \`${target}\` does not exist` });
         }
       }
     });
@@ -121,31 +121,31 @@ export function checkSchema(data = {}, dirName = null) {
     if (KNOWN_KEYS.has(key)) continue;
     const near = [...KNOWN_KEYS].sort((a, b) => lev(a, key) - lev(b, key))[0];
     const hint = near && lev(near, key) <= 2 ? `（"${near}" では？）` : '';
-    findings.push({ ln: 1, kind: 'schema', msg: `未知の frontmatter キー "${key}"${hint}` });
+    findings.push({ ln: 1, kind: 'schema', msg: `unknown frontmatter key "${key}"${hint}` });
   }
   const tools = data['allowed-tools'];
   if (tools !== undefined && String(tools).trim() !== '') {
     const items = String(tools).split(',').map((s) => s.trim());
     if (items.some((x) => x === '')) {
-      findings.push({ ln: 1, kind: 'allowed-tools', msg: 'allowed-tools に空の要素があります（カンマ区切り）' });
+      findings.push({ ln: 1, kind: 'allowed-tools', msg: 'allowed-tools has an empty entry (comma-separated list)' });
     }
     for (const it of items) {
       if (it && !/^[A-Za-z0-9_.:()*\- ]+$/.test(it)) {
-        findings.push({ ln: 1, kind: 'allowed-tools', msg: `allowed-tools の要素 "${it}" が不正な形式です` });
+        findings.push({ ln: 1, kind: 'allowed-tools', msg: `allowed-tools entry "${it}" is malformed` });
       }
     }
   }
   if (dirName && data.name && data.name !== dirName) {
-    findings.push({ ln: 1, kind: 'name', msg: `name "${data.name}" がスキルのディレクトリ名 "${dirName}" と一致しません` });
+    findings.push({ ln: 1, kind: 'name', msg: `name "${data.name}" does not match its directory "${dirName}"` });
   }
   // metadata が入れ子オブジェクトなら、その中身も検査（深いスキーマ）
   if (data.metadata && typeof data.metadata === 'object') {
     for (const [k, v] of Object.entries(data.metadata)) {
       if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(k)) {
-        findings.push({ ln: 1, kind: 'metadata', msg: `metadata のキー "${k}" が不正な形式です` });
+        findings.push({ ln: 1, kind: 'metadata', msg: `metadata key "${k}" is malformed` });
       }
       if (v === '' || v == null) {
-        findings.push({ ln: 1, kind: 'metadata', msg: `metadata.${k} の値が空です` });
+        findings.push({ ln: 1, kind: 'metadata', msg: `metadata.${k} is empty` });
       }
     }
   }
@@ -167,26 +167,26 @@ export function checkReferenceFiles(refFiles) {
 export function checkSkill({ hasFrontmatter, data = {}, body = '', exists = () => true, dirName = null, dupes = [] }) {
   const findings = [];
   if (!hasFrontmatter) {
-    findings.push({ ln: 1, kind: 'frontmatter', msg: 'YAML frontmatter (--- … ---) がありません' });
+    findings.push({ ln: 1, kind: 'frontmatter', msg: 'missing YAML frontmatter (--- … ---)' });
     return findings;
   }
   for (const k of dupes) {
-    findings.push({ ln: 1, kind: 'duplicate-key', msg: `frontmatter に重複キー "${k}" があります` });
+    findings.push({ ln: 1, kind: 'duplicate-key', msg: `duplicate frontmatter key "${k}"` });
   }
   if (!data.name) {
-    findings.push({ ln: 1, kind: 'frontmatter', msg: 'frontmatter に name がありません' });
+    findings.push({ ln: 1, kind: 'frontmatter', msg: 'frontmatter is missing name' });
   } else {
     if (!NAME_RE.test(data.name)) {
-      findings.push({ ln: 1, kind: 'name', msg: `name "${data.name}" は小文字・数字・ハイフンのみにしてください` });
+      findings.push({ ln: 1, kind: 'name', msg: `name "${data.name}" must be lowercase letters, digits, and hyphens only` });
     }
     if (data.name.length > 64) {
-      findings.push({ ln: 1, kind: 'name', msg: `name が64文字を超えています (${data.name.length})` });
+      findings.push({ ln: 1, kind: 'name', msg: `name exceeds 64 characters (${data.name.length})` });
     }
   }
   if (!data.description || !data.description.trim()) {
-    findings.push({ ln: 1, kind: 'description', msg: 'frontmatter に description（発火トリガ）がありません' });
+    findings.push({ ln: 1, kind: 'description', msg: 'frontmatter is missing description (the trigger the agent matches on)' });
   } else if (data.description.length > 1024) {
-    findings.push({ ln: 1, kind: 'description', msg: `description が1024文字を超えています (${data.description.length})` });
+    findings.push({ ln: 1, kind: 'description', msg: `description exceeds 1024 characters (${data.description.length})` });
   }
   findings.push(...checkSchema(data, dirName));
   findings.push(...scanRefs(body, exists));
@@ -224,7 +224,7 @@ export function detectCollisions(skills, opts = {}) {
     const n = s.data && s.data.name;
     if (!n) continue;
     if (byName.has(n)) {
-      findings.push({ file: s.file, kind: 'dup-name', msg: `name "${n}" が ${byName.get(n)} と重複しています（インストール衝突）` });
+      findings.push({ file: s.file, kind: 'dup-name', msg: `name "${n}" collides with ${byName.get(n)} — they cannot be installed together` });
     } else {
       byName.set(n, s.file);
     }
@@ -240,7 +240,7 @@ export function detectCollisions(skills, opts = {}) {
         findings.push({
           file: skills[j].file,
           kind: 'trigger-overlap',
-          msg: `description が ${ni || skills[i].file} と高類似 (${sim.toFixed(2)}) — 同じ入力で取り違える恐れ`,
+          msg: `description is ${sim.toFixed(2)} similar to ${ni || skills[i].file} — the agent may fire the wrong one`,
         });
       }
     }
@@ -340,7 +340,7 @@ export function parseArgs(argv) {
 
 function report(file, findings, inActions) {
   if (findings.length === 0) return 0;
-  console.error(`✗ ${file} — ${findings.length} 件`);
+  console.error(`✗ ${file} — ${findings.length} problem${findings.length === 1 ? '' : 's'}`);
   for (const f of findings) {
     const ln = f.ln || 1;
     console.error(`  ${file}:${ln}\t${f.msg}`);
@@ -354,7 +354,7 @@ export function main(argv) {
   const { paths, threshold, allow } = parseArgs(argv);
   const files = findSkillFiles(paths.length ? paths : defaultTargets());
   if (files.length === 0) {
-    console.log('skills-lint: SKILL.md が見つかりません（.claude/skills/ か skills/、または引数で指定）。スキップ。');
+    console.log('skills-lint: no SKILL.md found (looked in .claude/skills/ and skills/; pass a path to override) — skipping.');
     return 0;
   }
   const skills = [];
@@ -364,7 +364,7 @@ export function main(argv) {
     try {
       text = readFileSync(file, 'utf8');
     } catch {
-      console.error(`skills-lint: ${file} を読めません`);
+      console.error(`skills-lint: cannot read ${file}`);
       return 2;
     }
     const fm = parseFrontmatter(text);
@@ -402,10 +402,10 @@ export function main(argv) {
     total += 1;
   }
   if (total > 0) {
-    console.error(`\nskills-lint: ${total} 件`);
+    console.error(`\nskills-lint: ${total} problem${total === 1 ? '' : 's'}`);
     return 1;
   }
-  console.log(`skills-lint: ${files.length} 個のスキル、すべてOK`);
+  console.log(`skills-lint: ${files.length} skill${files.length === 1 ? '' : 's'}, all clean`);
   return 0;
 }
 
