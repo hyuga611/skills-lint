@@ -1,6 +1,6 @@
 {
   "name": "@hyuga/skills-lint",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Lint Anthropic Agent Skills (SKILL.md) in CI: referential integrity of referenced files + name/trigger collisions between skills. Language-agnostic, zero-dependency.",
   "type": "module",
   "bin": {
@@ -26,5 +26,17 @@
     "trigger-collision",
     "language-agnostic"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "author": "hyuga611",
+  "homepage": "https://github.com/hyuga611/skills-lint",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hyuga611/skills-lint.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hyuga611/skills-lint/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  }
 }

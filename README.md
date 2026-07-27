@@ -1,5 +1,7 @@
 # skills-lint
 
+> Part of a set of zero-dependency CI tools for AI-agent repos — start with **[reflint](https://github.com/hyuga611/reflint)**.
+
 **Your Agent Skills (`SKILL.md`) probably lie, or shadow each other. Catch it in CI.**
 `skills-lint` is a zero-dependency, language-agnostic linter for [Anthropic Agent Skills](https://www.anthropic.com/news/skills). It fails your PR when a `SKILL.md` references a script/file that doesn't exist, or when two skills collide — same `name`, or descriptions so similar the agent can't tell which to fire.
 
@@ -64,5 +66,20 @@ node src/check.mjs examples/good     # 正しい例を検査 → exit 0
 - [x] Configurable similarity threshold + allowlist (`--threshold` / `--allow`, or `SKILLS_LINT_THRESHOLD`)
 - [x] Frontmatter metadata schema — unknown-key typos, `allowed-tools` format, `name`↔directory match
 - [x] `references/` cross-link integrity + nested `metadata:` schema & duplicate-key detection
+
+## Related tools
+
+Zero-dependency CI linters for repos where AI agents do the work. Each one fails the PR on something that breaks quietly.
+
+| | Catches |
+| --- | --- |
+| [reflint](https://github.com/hyuga611/reflint) | `AGENTS.md` / `llms.txt` / `CLAUDE.md` pointing at commands, scripts, or paths that no longer exist |
+| **skills-lint** ← you are here | `SKILL.md` broken references + `name`/trigger collisions between skills |
+| [carrylint](https://github.com/hyuga611/carrylint) | Skills with the author's machine or model baked in — absolute paths, undeclared CLIs, unresolved placeholders |
+| [genchi](https://github.com/hyuga611/genchi) | Agents reporting "done" without re-fetching real-world state |
+| [tracklint](https://github.com/hyuga611/tracklint) | Forms and CTAs that quietly stopped being wired for conversion tracking |
+| [tokenlint](https://github.com/hyuga611/tokenlint) | Hardcoded colors that bypass your design tokens |
+| [reflint for VS Code](https://github.com/hyuga611/reflint-vscode) | The same reflint checks, inline in the editor as you save |
+| [orogami](https://github.com/hyuga611/orogami) | Not a linter — natural Japanese/CJK line breaking for OGP images (BudouX + font subsetting) |
 
 MIT
