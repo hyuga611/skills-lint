@@ -358,6 +358,7 @@ export function main(argv) {
     return 0;
   }
   const skills = [];
+  const results = [];
   let total = 0;
   for (const file of files) {
     let text;
@@ -386,20 +387,31 @@ export function main(argv) {
     }
     const refFindings = checkReferenceFiles(refInputs);
 
-    if (findings.length === 0 && refFindings.length === 0) console.log(`✓ ${file}`);
-    total += report(file, findings, inActions);
     const byFile = new Map();
     for (const rf of refFindings) {
       if (!byFile.has(rf.file)) byFile.set(rf.file, []);
       byFile.get(rf.file).push(rf);
     }
-    for (const [rfile, rfs] of byFile) total += report(rfile, rfs, inActions);
+    // 衝突はスキルを全部読み終えるまで確定しないので、ここでは出力せず溜める。
+    // 先に ✓ を出してしまうと「OK と言った直後に指摘が続く」表示になる。
+    results.push({ file, findings, byFile });
   }
-  // スキル間の衝突
+
+  // スキル間の衝突を、該当ファイルの findings に合流させる
   for (const c of detectCollisions(skills, { threshold, allow })) {
-    console.error(`  ${c.file}:1\t${c.msg}`);
-    if (inActions) console.log(`::error file=${c.file},line=1::${c.msg.replace(/\r?\n/g, ' ')}`);
-    total += 1;
+    const r = results.find((x) => x.file === c.file);
+    if (r) r.findings.push({ ln: 1, kind: 'collision', msg: c.msg });
+    else {
+      console.error(`  ${c.file}:1\t${c.msg}`);
+      if (inActions) console.log(`::error file=${c.file},line=1::${c.msg.replace(/\r?\n/g, ' ')}`);
+      total += 1;
+    }
+  }
+
+  for (const { file, findings, byFile } of results) {
+    if (findings.length === 0 && byFile.size === 0) console.log(`✓ ${file}`);
+    total += report(file, findings, inActions);
+    for (const [rfile, rfs] of byFile) total += report(rfile, rfs, inActions);
   }
   if (total > 0) {
     console.error(`\nskills-lint: ${total} problem${total === 1 ? '' : 's'}`);

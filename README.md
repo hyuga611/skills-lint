@@ -1,5 +1,7 @@
 # skills-lint
 
+![skills-lint fails CI on a broken reference and a 0.94-similar skill collision](docs/hero.svg)
+
 > Part of a set of zero-dependency CI tools for AI-agent repos — start with **[reflint](https://github.com/hyuga611/reflint)**.
 
 **Your Agent Skills (`SKILL.md`) probably lie, or shadow each other. Catch it in CI.**

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="280" viewBox="0 0 720 280" role="img" aria-label="Terminal: skills-lint reports a broken reference and a 0.94-similar description collision between two skills, exit 1">
+  <title>Terminal: skills-lint reports a broken reference and a 0.94-similar description collision between two skills, exit 1</title>
+  <defs>
+    <style>
+      .t { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace; font-size: 14.5px; }
+      .fg { fill: #c9d1d9; } .dim { fill: #7d8590; } .red { fill: #ff7b72; }
+      .green { fill: #3fb950; } .cyan { fill: #79c0ff; } .yel { fill: #d29922; } .mag { fill: #d2a8ff; }
+    </style>
+  </defs>
+  <rect x="0" y="0" width="720" height="280" rx="10" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+  <rect x="1" y="1" width="718" height="36" rx="9" fill="#161b22"/>
+  <rect x="1" y="28" width="718" height="9" fill="#161b22"/>
+  <line x1="1" y1="37" x2="719" y2="37" stroke="#30363d" stroke-width="1"/>
+  <circle cx="22" cy="19" r="6" fill="#ff5f57"/>
+  <circle cx="42" cy="19" r="6" fill="#febc2e"/>
+  <circle cx="62" cy="19" r="6" fill="#28c840"/>
+  <text class="t dim" x="360" y="24" text-anchor="middle">skills-lint — CI</text>
+  <text class="t" x="24" y="70"><tspan class="green" font-weight="700" xml:space="preserve">$</tspan><tspan class="fg" xml:space="preserve"> npx @hyuga/skills-lint</tspan></text>
+  <text class="t" x="24" y="100"><tspan class="red" font-weight="700" xml:space="preserve">✗</tspan><tspan class="fg" xml:space="preserve"> summarizer-a/SKILL.md </tspan><tspan class="dim" xml:space="preserve">— </tspan><tspan class="red" xml:space="preserve">1 problem</tspan></text>
+  <text class="t" x="24" y="124"><tspan class="dim" xml:space="preserve">  summarizer-a/SKILL.md:4</tspan><tspan class="fg" xml:space="preserve">   reference </tspan><tspan class="cyan" xml:space="preserve">`scripts/missing.py`</tspan><tspan class="fg" xml:space="preserve"> does not exist</tspan></text>
+  <text class="t" x="24" y="148"><tspan class="red" font-weight="700" xml:space="preserve">✗</tspan><tspan class="fg" xml:space="preserve"> summarizer-b/SKILL.md </tspan><tspan class="dim" xml:space="preserve">— </tspan><tspan class="red" xml:space="preserve">1 problem</tspan></text>
+  <text class="t" x="24" y="172"><tspan class="dim" xml:space="preserve">  summarizer-b/SKILL.md:1</tspan><tspan class="fg" xml:space="preserve">   description is </tspan><tspan class="mag" xml:space="preserve">0.94 similar</tspan><tspan class="fg" xml:space="preserve"> to summarizer-a</tspan></text>
+  <text class="t" x="24" y="196"><tspan class="dim" xml:space="preserve">                            </tspan><tspan class="yel" xml:space="preserve">— the agent may fire the wrong one</tspan></text>
+  <text class="t" x="24" y="244"><tspan class="red" xml:space="preserve">skills-lint: 2 problems</tspan><tspan class="dim" xml:space="preserve">     exit 1  ← the PR does not merge</tspan></text>
+</svg>
