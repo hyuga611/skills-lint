@@ -222,3 +222,54 @@ test('スラッシュコマンド/プレースホルダは参照検査の対象�
   const f = scanRefs('`/newpage` と `brief_<slug>.md`', () => false);
   assert.equal(f.length, 0);
 });
+
+// --- 実データ監査（公開リポジトリ 120スキル・2026-07）由来 ---
+
+test('複数行の description でリンタが落ちない（実データでクラッシュした形）', () => {
+  const text = [
+    '---', 'name: web-access',
+    'description:',
+    '  所有联网操作必须通过此 skill 处理，包括：搜索、网页抓取、登录后操作。',
+    '  触发场景：用户要求搜索信息、查看网页内容。',
+    'metadata:', '  author: eze', '---', '# body',
+  ].join('\n');
+  const fm = parseFrontmatter(text);
+  assert.equal(typeof fm.data.description, 'string');
+  assert.ok(fm.data.description.includes('所有联网操作'));
+  assert.equal(fm.data.metadata.author, 'eze');
+  const f = checkSkill({ hasFrontmatter: true, data: fm.data, body: fm.body, exists: () => true, dirName: 'web-access' });
+  assert.equal(f.some((x) => x.kind === 'description'), false);
+});
+
+test('`>` / `|` のブロックスカラーも文字列として読む', () => {
+  const y = (marker) => parseFrontmatter(`---\nname: x\ndescription: ${marker}\n  一行目\n  二行目\n---\nbody`);
+  assert.equal(typeof y('>').data.description, 'string');
+  assert.ok(y('|').data.description.includes('一行目'));
+});
+
+test('description が構造になっていたら、落ちずに指摘する', () => {
+  const f = checkSkill({ hasFrontmatter: true, data: { name: 'x', description: { a: 1 } }, body: '', exists: () => true, dirName: 'x' });
+  assert.ok(f.some((x) => x.kind === 'description' && /not a nested structure/.test(x.msg)));
+});
+
+test('実行時に決まるパス・穴埋めを参照扱いしない', () => {
+  const cases = [
+    '`${CLAUDE_SKILL_DIR}/config.env`',
+    '`SKILL_DIR/references/token-validation.md`',
+    '`references/[風格名].md`',
+    '`references/design-systems/{name}.md`',
+    '`~/.openclaw/agents/main/sessions`',
+    '`anthropic/claude-3.5-sonnet`',
+    '`r.jina.ai/example.com`',
+    '`.md`',
+    '`logs/observer.log`',
+  ];
+  for (const c of cases) assert.deepEqual(scanRefs(c, () => false), [], c);
+});
+
+test('スキルが作るファイルは同梱物として要求しない', () => {
+  assert.deepEqual(scanRefs('Write the result to `FULL-AUDIT-REPORT.md`.', () => false), []);
+  assert.deepEqual(scanRefs('結果を `SEO-REPORT.html` に出力する', () => false), []);
+  // 「読め」と書いてあるものは従来どおり同梱物として検査する
+  assert.equal(scanRefs('See `references/guide.md` for details.', () => false).length, 1);
+});

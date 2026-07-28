@@ -39,14 +39,28 @@ export function parseFrontmatter(text) {
     const mm = lines[i].match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
     if (!mm) continue;
     const key = mm[1];
-    // 値が空 + 次行がインデント = 1段ネストのオブジェクト（metadata: など）
-    if (mm[2].trim() === '' && i + 1 < lines.length && /^\s+\S/.test(lines[i + 1])) {
-      const obj = {};
-      while (i + 1 < lines.length && /^\s+\S/.test(lines[i + 1])) {
-        const sub = lines[++i].match(/^\s+([A-Za-z0-9_-]+):\s*(.*)$/);
-        if (sub) obj[sub[1]] = stripQuotes(sub[2]);
+    // 値が空 + 次行がインデント = 1段ネストのオブジェクト（metadata: など）か、
+    // 複数行の文字列（`description:` の後に本文を折り返して書く形／`>` `|` ブロック）。
+    // 実データ監査（公開リポジトリ 119スキル・2026-07）で、後者を常にオブジェクトとして
+    // 読んでいたため `data.description.trim is not a function` でリンタごと落ちていた。
+    const blockScalar = /^[>|][-+]?\d*$/.test(mm[2].trim());
+    if ((mm[2].trim() === '' || blockScalar) && i + 1 < lines.length && /^\s+\S/.test(lines[i + 1])) {
+      const block = [];
+      let j = i;
+      while (j + 1 < lines.length && /^\s+\S/.test(lines[j + 1])) block.push(lines[++j]);
+      const isObject = !blockScalar && block.every((l) => /^\s+([A-Za-z0-9_-]+):(\s|$)/.test(l));
+      i = j;
+      if (isObject) {
+        const obj = {};
+        for (const l of block) {
+          const sub = l.match(/^\s+([A-Za-z0-9_-]+):\s*(.*)$/);
+          if (sub) obj[sub[1]] = stripQuotes(sub[2]);
+        }
+        set(key, obj);
+      } else {
+        // YAML の折り返しスカラーは行を空白で連結する（`|` は改行維持だが検査目的では同等に扱う）
+        set(key, block.map((l) => l.trim()).join(blockScalar && mm[2].includes('|') ? '\n' : ' ').trim());
       }
-      set(key, obj);
     } else {
       set(key, stripQuotes(mm[2]));
     }
@@ -63,7 +77,39 @@ export function looksLikePath(t) {
   if (t.includes('<') || t.includes('>')) return false; // テンプレプレースホルダ (foo_<slug>.md 等)
   if (t.includes('*')) return false; // glob
   if (t.startsWith('#') || t.startsWith('@')) return false;
+  // 以下は実データ監査（公開リポジトリ 120スキル・2026-07）で誤検知だった形。
+  if (t.includes('{') || t.includes('}')) return false; // {domain}.md, {browser,js}_protocol.json
+  if (t.includes('(') || t.includes(')')) return false; // 擬似コード
+  if (t.includes('"') || t.includes("'")) return false; // 文字列リテラル
+  if (t.includes('...')) return false;                  // 省略記法
+  if (t.includes('[') || t.includes(']')) return false; // references/[風格名].md のような穴埋め
+  if (t.includes('$')) return false;                    // ${CLAUDE_SKILL_DIR}/… $WORKSPACE/… は実行時に決まる
+  if (/^[A-Z][A-Z0-9_]{2,}\//.test(t)) return false;    // SKILL_DIR/… PROJECT_ROOT/… は実行時に解決される目印
+  if (t.startsWith('~')) return false;                  // ~/.config/… は利用者のホーム（スキル配布物ではない）
+  if (t.startsWith('-')) return false;                  // CLI フラグ
+  if (/^\.[A-Za-z0-9]+$/.test(t)) return false;         // 拡張子そのもの（散文中の「.md」等）
+  if (/^[a-z0-9-]+(?:\.[a-z0-9-]+)+\//i.test(t)) return false; // github.com/… r.jina.ai/… などホスト始まり
+  if (/^(?:\.\/)?(?:dist|build|out|target|node_modules|tmp|temp|\.venv|venv|logs?|output)(?:\/|$)/i.test(t)) return false;
   return (t.includes('/') && !t.endsWith('/')) || CODE_EXT.test(t);
+}
+
+/**
+ * その行は「スキルが実行時に作るファイル」の話か。
+ * 監査では path 指摘の 34% が、スキルの成果物（`FULL-AUDIT-REPORT.md` を書き出す等）だった。
+ * 配布物として存在しないのが正常なので、指摘しない。
+ */
+const PRODUCES = /\b(creat|writ|sav|generat|output|export|produc|store|append|render)\w*\b|作成|生成|保存|出力|書き出/i;
+
+/**
+ * 「これはスキル同梱物のパスとして書かれている」と言えるか。
+ * 拡張子が無いものは、先頭ディレクトリが実在するときだけパスとして扱う
+ * （`anthropic/claude-3.5-sonnet` のようなモデルIDを参照と誤認しないため）。
+ */
+export function isSkillPath(t, exists) {
+  if (/\.[A-Za-z0-9]{1,8}$/.test(t)) return true;
+  const head = t.split('/')[0];
+  if (!head || head === t) return false;
+  return exists(head);
 }
 
 /** 本文中のバッククォートパス + markdown リンク先が、スキルディレクトリ内に実在するか。 */
@@ -74,10 +120,14 @@ export function scanRefs(text, exists = () => true) {
     .forEach((line, i) => {
       const ln = i + 1;
       // 1) バッククォート `path`
+      const produces = PRODUCES.test(line);
       for (const m of line.matchAll(/`([^`]+)`/g)) {
         const t = m[1].trim();
         if (!looksLikePath(t)) continue;
-        if (!exists(t.replace(/^\.\//, ''))) {
+        if (produces) continue; // その行で作ると書いてあるファイルは、同梱されていなくて当然
+        const target = t.replace(/^\.\//, '').split('::')[0].replace(/[#?].*$/, '');
+        if (!target || !isSkillPath(target, exists)) continue;
+        if (!exists(target)) {
           findings.push({ ln, kind: 'path', msg: `reference \`${t}\` does not exist` });
         }
       }
@@ -183,7 +233,10 @@ export function checkSkill({ hasFrontmatter, data = {}, body = '', exists = () =
       findings.push({ ln: 1, kind: 'name', msg: `name exceeds 64 characters (${data.name.length})` });
     }
   }
-  if (!data.description || !data.description.trim()) {
+  if (typeof data.description !== 'string' && data.description != null) {
+    // 想定外の型でも落ちない（リンタが落ちるのは、指摘を出さないより悪い）
+    findings.push({ ln: 1, kind: 'description', msg: 'description must be text, not a nested structure' });
+  } else if (!data.description || !data.description.trim()) {
     findings.push({ ln: 1, kind: 'description', msg: 'frontmatter is missing description (the trigger the agent matches on)' });
   } else if (data.description.length > 1024) {
     findings.push({ ln: 1, kind: 'description', msg: `description exceeds 1024 characters (${data.description.length})` });
