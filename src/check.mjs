@@ -112,6 +112,21 @@ export function isSkillPath(t, exists) {
   return exists(head);
 }
 
+/**
+ * A bare filename mentioned as a *format* in prose is not a reference, even if no such file
+ * is here. A skill says "read the scripts in `package.json`" or "write `AGENTS.md`" — naming
+ * files in the *user's* repository. Resolving those inside the skill directory fails every
+ * skill that documents config files. reflint made the same fix in v0.6.0.
+ * A path with a directory in it (`docs/AGENTS.md`) is an explicit reference and still checked.
+ */
+export const FORMAT_NAMES = new Set([
+  'package.json', 'package-lock.json', 'tsconfig.json', 'composer.json', 'pyproject.toml',
+  'Cargo.toml', 'go.mod', 'Gemfile', 'requirements.txt', 'Makefile', 'Dockerfile',
+  'README.md', 'CHANGELOG.md', 'LICENSE', 'CONTRIBUTING.md',
+  'AGENTS.md', 'CLAUDE.md', 'GEMINI.md', 'SKILL.md', 'llms.txt', 'llms-full.txt',
+  '.gitignore', '.editorconfig', '.env', '.npmrc',
+]);
+
 /** 本文中のバッククォートパス + markdown リンク先が、スキルディレクトリ内に実在するか。 */
 export function scanRefs(text, exists = () => true) {
   const findings = [];
@@ -127,6 +142,7 @@ export function scanRefs(text, exists = () => true) {
         if (produces) continue; // その行で作ると書いてあるファイルは、同梱されていなくて当然
         const target = t.replace(/^\.\//, '').split('::')[0].replace(/[#?].*$/, '');
         if (!target || !isSkillPath(target, exists)) continue;
+        if (!target.includes('/') && FORMAT_NAMES.has(target)) continue; // a format name in prose
         if (!exists(target)) {
           findings.push({ ln, kind: 'path', msg: `reference \`${t}\` does not exist` });
         }

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.1
+
+- **Added `main` / `exports` so the package can be imported as a library.** With neither field
+  present, `import { checkSkill } from '@hyuga/skills-lint'` did not resolve: the checks were
+  reachable only by spawning the CLI, even though `src/check.mjs` had exported `checkSkill`,
+  `detectCollisions`, `findSkillFiles`, `scanRefs` and the rest all along. Nothing about the CLI,
+  its flags or its output changes.
+- **Bare format names in prose are no longer treated as references.** A skill that says "read the
+  scripts in `package.json`" or "write `AGENTS.md`" is naming a file in *the user's* repository,
+  not one shipped beside the skill — but every such mention was reported as a missing reference,
+  so any skill about config files failed. Bare, well-known names (`package.json`, `README.md`,
+  `AGENTS.md`, `Dockerfile`, …) are now skipped; a path with a directory in it (`docs/AGENTS.md`)
+  is still checked. reflint made the same fix in v0.6.0. Found by linting a skill that documents
+  these files for a living.
+
 ## 0.6.0
 
 Driven by a real-world audit of **120 public `SKILL.md` files from 120 repositories** (2026-07),
