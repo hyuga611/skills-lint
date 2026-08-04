@@ -165,3 +165,29 @@ test('dedenting the block does not break a block scalar', () => {
   const fm = parseFrontmatter('---\n name: x\n description: >-\n   long text here\n---\nbody');
   assert.equal(fm.data.description, 'long text here');
 });
+
+// --- fenced blocks are examples, not references -------------------------------------
+// A skill that shows its own sample output, or a `cp src/a.ts dst/` snippet, was reported
+// as pointing at files that do not exist — 10.8% of path/link findings across a
+// 2,465-skill ClawHub sample. reflint puts fenced content behind --code-blocks; this
+// matches that call so the two engines agree on what counts as a reference.
+test('a path inside a fenced block is not a reference', () => {
+  const doc = [
+    'Sample output:',
+    '',
+    '```',
+    '  [skills-lint] SKILL.md:12 reference `scripts/build-report.py` does not exist',
+    '```',
+  ].join('\n');
+  assert.ok(!flagged(doc, 'scripts/build-report.py'));
+});
+
+test('a tilde-fenced block is skipped too', () => {
+  const doc = ['~~~bash', 'cp `src/nowhere.ts` dist/', '~~~'].join('\n');
+  assert.ok(!flagged(doc, 'src/nowhere.ts'));
+});
+
+test('a path outside the fence is still checked', () => {
+  const doc = ['```', 'echo hi', '```', '', 'Then read `docs/missing-guide.md`.'].join('\n');
+  assert.ok(flagged(doc, 'docs/missing-guide.md'), 'prose references must still be caught');
+});

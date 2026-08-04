@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.1
+
+- **Fenced code blocks are no longer scanned for references.** A skill that shows its own
+  sample output, or a `cp src/a.ts dist/` snippet, was reported as pointing at files that do
+  not exist — **10.8% of the path/link findings across a 2,465-skill ClawHub sample**. reflint
+  had already made this call in its own scanner and puts fenced content behind
+  `--code-blocks`; skills-lint now matches it, so the two engines agree on what counts as a
+  reference. Prose references outside the fence are still checked.
+
+  Found by dogfooding: a skill written to *document* this linter could not pass it.
+
 ## 0.7.0
 
 Driven by a real-world audit of the **46 first-party skills bundled in

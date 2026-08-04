@@ -183,9 +183,20 @@ export function scanRefs(text, exists = () => true, existsLocal = exists) {
     }
   }
 
+  // Fenced blocks are examples, not references. A skill that shows its own sample output
+  // or a `cp src/x.ts dst/` snippet was reported as pointing at files that do not exist —
+  // 10.8% of the path/link findings across a 2,465-skill ClawHub sample (2026-08).
+  // reflint made this call in its own scanner and puts fenced content behind --code-blocks;
+  // skills-lint now matches it, so the two engines agree on what counts as a reference.
+  let inFence = false;
   lines
     .forEach((line, i) => {
       const ln = i + 1;
+      if (/^\s*(`{3,}|~{3,})/.test(line)) {
+        inFence = !inFence;
+        return;
+      }
+      if (inFence) return;
       // 1) バッククォート `path`
       const produces = PRODUCES.test(line);
       for (const m of line.matchAll(/`([^`]+)`/g)) {
