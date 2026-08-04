@@ -1,5 +1,61 @@
 # Changelog
 
+## 0.7.0
+
+Driven by a real-world audit of the **46 first-party skills bundled in
+[openclaw/openclaw](https://github.com/openclaw/openclaw)** (`.agents/skills/**`, commit
+`3ac7083`, 2026-08) — 385k stars, the largest agent codebase in public. v0.6.1 reported
+**201 errors** on that corpus. Thirteen were genuine. The rest are fixed below.
+
+- **`existsLocal`: telling "is this written as a path" apart from "does it resolve".** Both
+  questions were being answered by the same predicate. When the caller resolves references
+  repository-wide — as it must for a skill checked into a repo — `openclaw/openclaw` starts
+  looking like a path, because *some* directory named `openclaw` exists deep in the tree
+  (`apps/android/…/ai/openclaw`). `isSkillPath`, `scanRefs` and `checkSkill` now take an
+  optional stricter `existsLocal` for the head-segment test; it defaults to `exists`, so
+  existing callers are unaffected. **19 false positives.**
+- **A dotted numeric tail is a version, not a file extension.** The guard above `isSkillPath`
+  claimed to keep model ids like `anthropic/claude-3.5-sonnet` out of reference checking, and
+  did — but `openai/gpt-5.4`, `zai/glm-5.1` and `moonshot/kimi-k2.5` walked straight through
+  it, because `.4`, `.1` and `.5` matched the "has an extension" test. `data.tar.gz` and
+  `file.7z` are still paths. **6 false positives.**
+- **Model identifiers are recognised explicitly.** In a monorepo the provider segment is often
+  a real directory (openclaw ships `extensions/openai`, `extensions/anthropic`), so no
+  existence heuristic can separate `openai/gpt-4o` from a genuine reference. The same
+  vocabulary carrylint uses for its model-id rule is now inlined here (kept dependency-free).
+- **Artifacts the document says it writes are excused everywhere, not just on the line that
+  says so.** A skill writes `failures.json` in one step and reads it back three paragraphs
+  later; only the first mention was excused and the read-back was reported missing. The
+  produced set is now collected in a pre-pass over the whole document. **16 false positives —
+  the single largest class.**
+- **Option syntax and branch templates are not paths.** `openai/gpt-5.4,thinking=xhigh,fast`
+  and `source_ref=release/YYYY.M.PATCH` are key/value and option strings; `release/YYYY.M.PATCH`
+  and `extended-stable/YYYY.M.33` are branch-name templates. Anything containing `,` or `=`, or
+  carrying a `YYYY`/`MM`/`DD`/`PATCH`/`MAJOR`/`MINOR` placeholder segment, is skipped. Bare
+  all-caps filenames like `LICENSE` stay checkable. **11 false positives.**
+- **An indented frontmatter block no longer loses every key.** Some authors indent the whole
+  YAML block by a space or two; it is still one mapping, but the key pattern is anchored at
+  column 0, so every key was dropped and the skill was reported as missing *both* name and
+  description while both were plainly present. The block's common indent is now removed
+  before parsing, which leaves relative indentation — the thing that marks nested objects and
+  block scalars — untouched.
+- **Frontmatter keys: `compatibility` added, runtime extensions accepted, unknown keys
+  downgraded to a warning.** `compatibility` is part of the Agent Skills standard and was
+  missing from `KNOWN_KEYS`. Claude Code and OpenClaw ship documented extensions
+  (`user-invocable`, `disable-model-invocation`, `when_to_use`, `context`, `hooks`, `model`,
+  `argument-hint`) which are now recognised. More importantly the standard requires a
+  compliant runtime to *ignore* frontmatter keys it does not recognise — that is what keeps a
+  skill portable — so an unrecognised key can no longer fail a build. A key within edit
+  distance 2 of a known one is still an **error**, because a typo means the key it was meant
+  to be is absent. On a 30-skill ClawHub pilot this alone moved 12 findings out of error.
+- **`test/realworld.test.mjs`** pins all of the above to the actual snippets from that audit,
+  alongside the genuine dangling references — `../openclaw-docs/SKILL.md` (a sibling skill that
+  does not exist), `test/fixtures/test-timings.unit.json`, `scripts/test-parallel-memory.mjs` —
+  which must keep being caught.
+
+Net on that corpus, with the matching tenken 0.2.0 change: **201 errors → 43**, every one of the
+13 genuine defects still reported.
+
 ## 0.6.1
 
 - **Added `main` / `exports` so the package can be imported as a library.** With neither field

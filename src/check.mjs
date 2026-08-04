@@ -34,7 +34,15 @@ export function parseFrontmatter(text) {
     if (Object.prototype.hasOwnProperty.call(data, k)) dupes.push(k);
     data[k] = v;
   };
-  const lines = m[1].split(/\r?\n/);
+  let lines = m[1].split(/\r?\n/);
+  // Some authors indent the whole frontmatter block by a space or two. That is still one
+  // YAML mapping, but the key pattern below is anchored at column 0, so every key was
+  // dropped and the skill was reported as missing both name and description (2 skills in a
+  // 2,465-skill ClawHub sample, 2026-08). Remove the block's common indent first — relative
+  // indentation, which is what marks nested objects and block scalars, is preserved.
+  const indents = lines.filter((l) => l.trim() !== '').map((l) => l.match(/^[ \t]*/)[0].length);
+  const base = indents.length ? Math.min(...indents) : 0;
+  if (base > 0) lines = lines.map((l) => (l.trim() === '' ? l : l.slice(base)));
   for (let i = 0; i < lines.length; i++) {
     const mm = lines[i].match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
     if (!mm) continue;
@@ -68,6 +76,15 @@ export function parseFrontmatter(text) {
   return { hasFrontmatter: true, data, body: m[2], dupes };
 }
 
+/**
+ * `provider/model` identifiers read like two-segment paths, and in a monorepo the provider
+ * segment often *is* a real directory (openclaw has extensions/openai, extensions/anthropic,
+ * extensions/google), so the "does the head exist" heuristic cannot tell them apart.
+ * Same vocabulary carrylint uses for its model-id rule, kept inline to stay dependency-free.
+ */
+export const MODEL_ID =
+  /(?:^|\/)(?:claude-[a-z0-9][a-z0-9.-]*|gpt-[0-9][a-z0-9.-]*|gpt-image-[0-9]|o[0-9]-[a-z0-9-]+|gemini-[0-9][a-z0-9.-]*|dall-e-[0-9]|text-embedding-[a-z0-9-]+|glm-[0-9][a-z0-9.-]*|kimi-[a-z0-9][a-z0-9.-]*|qwen-[0-9][a-z0-9.-]*)$/i;
+
 export function looksLikePath(t) {
   if (!t || /\s/.test(t)) return false;
   if (/^[a-z][\w+.-]*:\/\//i.test(t)) return false; // URL
@@ -87,6 +104,14 @@ export function looksLikePath(t) {
   if (/^[A-Z][A-Z0-9_]{2,}\//.test(t)) return false;    // SKILL_DIR/… PROJECT_ROOT/… は実行時に解決される目印
   if (t.startsWith('~')) return false;                  // ~/.config/… は利用者のホーム（スキル配布物ではない）
   if (t.startsWith('-')) return false;                  // CLI フラグ
+  // Option / key=value syntax is not a path: `openai/gpt-5.4,thinking=xhigh,fast`,
+  // `source_ref=release/YYYY.M.PATCH` (openclaw/openclaw audit, 2026-08).
+  if (t.includes(',') || t.includes('=')) return false;
+  // Date and version placeholders in a branch or tag template: `release/YYYY.M.PATCH`,
+  // `extended-stable/YYYY.M.33`. Narrow on purpose — bare all-caps filenames like
+  // `LICENSE` and `README.md` must stay checkable.
+  if (/(?:^|[/.\-])(?:YYYY|MM|DD|PATCH|MAJOR|MINOR)(?:$|[/.\-])/.test(t)) return false;
+  if (MODEL_ID.test(t)) return false;                   // provider/model は識別子であってパスではない
   if (/^\.[A-Za-z0-9]+$/.test(t)) return false;         // 拡張子そのもの（散文中の「.md」等）
   if (/^[a-z0-9-]+(?:\.[a-z0-9-]+)+\//i.test(t)) return false; // github.com/… r.jina.ai/… などホスト始まり
   if (/^(?:\.\/)?(?:dist|build|out|target|node_modules|tmp|temp|\.venv|venv|logs?|output)(?:\/|$)/i.test(t)) return false;
@@ -104,12 +129,24 @@ const PRODUCES = /\b(creat|writ|sav|generat|output|export|produc|store|append|re
  * 「これはスキル同梱物のパスとして書かれている」と言えるか。
  * 拡張子が無いものは、先頭ディレクトリが実在するときだけパスとして扱う
  * （`anthropic/claude-3.5-sonnet` のようなモデルIDを参照と誤認しないため）。
+ *
+ * `existsLocal` answers "is this written as a path *here*" and must be STRICTER than
+ * `exists`, which answers "does it resolve anywhere in the repository". Using the generous
+ * predicate for both made `openclaw/openclaw` look like a path, because a directory named
+ * `openclaw` exists deep in the tree (apps/android/…/ai/openclaw) — 19 false positives in
+ * the openclaw/openclaw audit, 2026-08. Defaults to `exists` so existing callers are
+ * unaffected.
  */
-export function isSkillPath(t, exists) {
+export function isSkillPath(t, exists, existsLocal = exists) {
+  // A dotted numeric tail is a version number, not a file extension. The guard below
+  // caught `anthropic/claude-3.5-sonnet`, but model ids whose version ends in a digit —
+  // `openai/gpt-5.4`, `zai/glm-5.1`, `moonshot/kimi-k2.5` — slipped through because `.4`,
+  // `.1` and `.5` read as extensions (found auditing openclaw/openclaw, 2026-08).
+  if (/\d\.\d+$/.test(t)) return false;
   if (/\.[A-Za-z0-9]{1,8}$/.test(t)) return true;
   const head = t.split('/')[0];
   if (!head || head === t) return false;
-  return exists(head);
+  return existsLocal(head);
 }
 
 /**
@@ -128,10 +165,25 @@ export const FORMAT_NAMES = new Set([
 ]);
 
 /** 本文中のバッククォートパス + markdown リンク先が、スキルディレクトリ内に実在するか。 */
-export function scanRefs(text, exists = () => true) {
+export function scanRefs(text, exists = () => true, existsLocal = exists) {
   const findings = [];
-  String(text)
-    .split(/\r?\n/)
+  const lines = String(text).split(/\r?\n/);
+
+  // A skill writes an artifact in one step and reads it back in a later one:
+  //   "Write the results to `failures.json`."   …later…   "Read `failures.json`."
+  // Checking PRODUCES line-by-line only excused the first mention and flagged the second.
+  // Collect everything the document says it produces, then excuse it everywhere.
+  // (16 of 80 findings in the openclaw/openclaw audit, 2026-08 — the largest single class.)
+  const produced = new Set();
+  for (const line of lines) {
+    if (!PRODUCES.test(line)) continue;
+    for (const m of line.matchAll(/`([^`]+)`/g)) {
+      const t = m[1].trim();
+      if (looksLikePath(t)) produced.add(t.replace(/^\.\//, '').split('::')[0].replace(/[#?].*$/, ''));
+    }
+  }
+
+  lines
     .forEach((line, i) => {
       const ln = i + 1;
       // 1) バッククォート `path`
@@ -141,7 +193,8 @@ export function scanRefs(text, exists = () => true) {
         if (!looksLikePath(t)) continue;
         if (produces) continue; // その行で作ると書いてあるファイルは、同梱されていなくて当然
         const target = t.replace(/^\.\//, '').split('::')[0].replace(/[#?].*$/, '');
-        if (!target || !isSkillPath(target, exists)) continue;
+        if (!target || !isSkillPath(target, exists, existsLocal)) continue;
+        if (produced.has(target)) continue; // the document says it writes this one
         if (!target.includes('/') && FORMAT_NAMES.has(target)) continue; // a format name in prose
         if (!exists(target)) {
           findings.push({ ln, kind: 'path', msg: `reference \`${t}\` does not exist` });
@@ -178,16 +231,41 @@ export function lev(a, b) {
 }
 
 // Anthropic Agent Skills の frontmatter で認識するキー。
-export const KNOWN_KEYS = new Set(['name', 'description', 'allowed-tools', 'license', 'metadata', 'version']);
+/**
+ * Keys defined by the Agent Skills standard. `compatibility` was missing here, and `version`
+ * is not part of the standard (it belongs under `metadata`) but is common enough in the wild
+ * to accept without complaint.
+ */
+export const KNOWN_KEYS = new Set([
+  'name', 'description', 'allowed-tools', 'license', 'metadata', 'compatibility', 'version',
+]);
+
+/**
+ * Runtime extensions. The standard says a compliant runtime ignores frontmatter keys it does
+ * not recognise, precisely so a skill stays portable across agents — so these are not errors.
+ * Claude Code / OpenClaw ship the ones below.
+ */
+export const RUNTIME_KEYS = new Set([
+  'user-invocable', 'disable-model-invocation', 'when_to_use', 'when-to-use',
+  'context', 'hooks', 'model', 'argument-hint',
+]);
 
 /** frontmatter スキーマ検査：未知キー(タイポ)・allowed-tools 形式・name とディレクトリ名の一致。 */
 export function checkSchema(data = {}, dirName = null) {
   const findings = [];
   for (const key of Object.keys(data)) {
-    if (KNOWN_KEYS.has(key)) continue;
+    if (KNOWN_KEYS.has(key) || RUNTIME_KEYS.has(key)) continue;
     const near = [...KNOWN_KEYS].sort((a, b) => lev(a, key) - lev(b, key))[0];
-    const hint = near && lev(near, key) <= 2 ? `（"${near}" では？）` : '';
-    findings.push({ ln: 1, kind: 'schema', msg: `unknown frontmatter key "${key}"${hint}` });
+    const typo = near && lev(near, key) <= 2;
+    // A near-miss of a known key is a typo, and a typo means the key it was meant to be is
+    // absent — an error. Anything else is a key this runtime does not know, which the
+    // standard requires runtimes to ignore; report it, but do not fail a build over it.
+    findings.push({
+      ln: 1,
+      kind: 'schema',
+      severity: typo ? 'error' : 'warn',
+      msg: `unknown frontmatter key "${key}"${typo ? `（"${near}" では？）` : ''}`,
+    });
   }
   const tools = data['allowed-tools'];
   if (tools !== undefined && String(tools).trim() !== '') {
@@ -230,7 +308,7 @@ export function checkReferenceFiles(refFiles) {
 }
 
 /** スキル単体の検査：frontmatter 妥当性 + スキーマ + 参照整合。 */
-export function checkSkill({ hasFrontmatter, data = {}, body = '', exists = () => true, dirName = null, dupes = [] }) {
+export function checkSkill({ hasFrontmatter, data = {}, body = '', exists = () => true, existsLocal = exists, dirName = null, dupes = [] }) {
   const findings = [];
   if (!hasFrontmatter) {
     findings.push({ ln: 1, kind: 'frontmatter', msg: 'missing YAML frontmatter (--- … ---)' });
@@ -258,7 +336,7 @@ export function checkSkill({ hasFrontmatter, data = {}, body = '', exists = () =
     findings.push({ ln: 1, kind: 'description', msg: `description exceeds 1024 characters (${data.description.length})` });
   }
   findings.push(...checkSchema(data, dirName));
-  findings.push(...scanRefs(body, exists));
+  findings.push(...scanRefs(body, exists, existsLocal));
   return findings;
 }
 

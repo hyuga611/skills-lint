@@ -2,7 +2,7 @@
 
 ![skills-lint fails CI on a broken reference and a 0.94-similar skill collision](docs/hero.svg)
 
-> Part of a set of zero-dependency CI tools for AI-agent repos — start with **[reflint](https://github.com/hyuga611/reflint)**.
+> One of three zero-dependency linters for AI-agent repos. To run all three in a single pass, with one report and one exit code, use **[tenken](https://github.com/hyuga611/tenken)** — `npx @hyuga/tenken`.
 
 **Your Agent Skills (`SKILL.md`) probably lie, or shadow each other. Catch it in CI.**
 `skills-lint` is a zero-dependency, language-agnostic linter for [Anthropic Agent Skills](https://www.anthropic.com/news/skills). It fails your PR when a `SKILL.md` references a script/file that doesn't exist, or when two skills collide — same `name`, or descriptions so similar the agent can't tell which to fire.
@@ -11,6 +11,26 @@
 Anthropic Agent Skills 用の依存ゼロ・言語非依存リンタ。**参照整合**（本文が指すファイルの実在）と**衝突検出**（`name` 重複・`description` の近すぎ＝トリガ取り違え）を CI で毎PR落とす。
 
 ---
+
+## Tried on real code / 実データに当てた
+
+A random sample of **2,465 skills published on [ClawHub](https://clawhub.ai)**, drawn from 69,265
+enumerated (August 2026, seed `20260804`):
+
+| | |
+|---|---|
+| declared `name` differs from the registry slug | **29.2%** |
+| `SKILL.md` ships with no YAML frontmatter at all | **7.1%** |
+
+Plus the **46 skills bundled in [openclaw/openclaw](https://github.com/openclaw/openclaw)**, where
+one skill tells the agent to read `../openclaw-docs/SKILL.md` — a skill that does not exist.
+
+That run was also the harshest test of this linter. It first reported **201 errors for 13 real
+defects** on the openclaw corpus. Four precision bugs were fixed before publishing any number:
+repository-wide reference resolution, model ids (`openai/gpt-5.4`) read as file paths, artifacts
+excused only on the line that creates them, and indented frontmatter losing every key. Unknown
+frontmatter keys are now a warning, not an error — the Agent Skills standard requires runtimes to
+ignore keys they do not recognise. Every case is pinned in [`test/realworld.test.mjs`](test/realworld.test.mjs).
 
 ## What it checks / 何を見るか
 
@@ -75,6 +95,7 @@ Zero-dependency CI linters for repos where AI agents do the work. Each one fails
 
 | | Catches |
 | --- | --- |
+| **[tenken](https://github.com/hyuga611/tenken)** — start here | Runs reflint + skills-lint + carrylint over one tree: one report, one exit code, one Action |
 | [reflint](https://github.com/hyuga611/reflint) | `AGENTS.md` / `llms.txt` / `CLAUDE.md` pointing at commands, scripts, or paths that no longer exist |
 | **skills-lint** ← you are here | `SKILL.md` broken references + `name`/trigger collisions between skills |
 | [carrylint](https://github.com/hyuga611/carrylint) | Skills with the author's machine or model baked in — absolute paths, undeclared CLIs, unresolved placeholders |
