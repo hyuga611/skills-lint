@@ -20,17 +20,22 @@ enumerated (August 2026, seed `20260804`):
 | | |
 |---|---|
 | declared `name` differs from the registry slug | **29.2%** |
-| `SKILL.md` ships with no YAML frontmatter at all | **7.1%** |
+| `SKILL.md` ships with no YAML frontmatter at all | **7.8%** |
 
 Plus the **46 skills bundled in [openclaw/openclaw](https://github.com/openclaw/openclaw)**, where
 one skill tells the agent to read `../openclaw-docs/SKILL.md` — a skill that does not exist.
 
-That run was also the harshest test of this linter. It first reported **201 errors for 13 real
-defects** on the openclaw corpus. Four precision bugs were fixed before publishing any number:
-repository-wide reference resolution, model ids (`openai/gpt-5.4`) read as file paths, artifacts
-excused only on the line that creates them, and indented frontmatter losing every key. Unknown
-frontmatter keys are now a warning, not an error — the Agent Skills standard requires runtimes to
-ignore keys they do not recognise. Every case is pinned in [`test/realworld.test.mjs`](test/realworld.test.mjs).
+That run was also the harshest test of this linter. On the openclaw corpus the three engines first
+reported **219 findings**; after six precision fixes the same corpus reports **59**, with every
+real defect still caught. Five of those fixes were here: repository-wide reference resolution,
+model ids (`openai/gpt-5.4`) read as file paths, artifacts excused only on the line that creates
+them, indented frontmatter losing every key, and references inside fenced code blocks — a skill
+that printed its own sample output could not describe its findings without being told they did not
+exist.
+
+Unknown frontmatter keys are now a warning, not an error: the Agent Skills standard requires
+runtimes to ignore keys they do not recognise. Every case is pinned in
+[`test/realworld.test.mjs`](test/realworld.test.mjs).
 
 ## What it checks / 何を見るか
 
