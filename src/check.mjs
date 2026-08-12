@@ -31,7 +31,7 @@ export function parseFrontmatter(text) {
   const data = {};
   const dupes = [];
   const set = (k, v) => {
-    if (Object.prototype.hasOwnProperty.call(data, k)) dupes.push(k);
+    if (Object.hasOwn(data, k)) dupes.push(k);
     data[k] = v;
   };
   let lines = m[1].split(/\r?\n/);
@@ -482,7 +482,10 @@ export function parseArgs(argv) {
   const paths = [];
   const allow = new Set();
   let threshold = process.env.SKILLS_LINT_THRESHOLD ? parseFloat(process.env.SKILLS_LINT_THRESHOLD) : undefined;
-  const addAllow = (s) => (s || '').split(',').forEach((n) => n.trim() && allow.add(n.trim()));
+  const addAllow = (s) =>
+    (s || '').split(',').forEach((n) => {
+      if (n.trim()) allow.add(n.trim());
+    });
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--') continue;
