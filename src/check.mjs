@@ -9,7 +9,7 @@
 //
 //   node src/check.mjs [path ...]   # path = SKILL.md か、SKILL.md を含むディレクトリ
 //   省略時は .claude/skills/ か skills/ を探索、無ければカレントを走査。
-import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync, realpathSync } from 'node:fs';
 import { resolve, join, dirname, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -579,6 +579,21 @@ export function main(argv) {
   return 0;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// argv[1] は「どう呼ばれたか」のパス。`npm i -g` も `npx` もそこにシンボリックリンクを置くので、
+// 解決済みの実パスである import.meta.url とは一致せず、install した版の CLI は何もせずに
+// exit 0 で終わっていた。リンタにとってこれは最悪の壊れ方で、「問題を見つけなかった」と
+// 「一度も動いていない」が区別できない。比較する前にリンクを解決する。
+function runDirectly() {
+  const arg = process.argv[1];
+  if (!arg) return false;
+  if (import.meta.url === pathToFileURL(arg).href) return true;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(arg)).href;
+  } catch {
+    return false;
+  }
+}
+
+if (runDirectly()) {
   process.exit(main(process.argv.slice(2)));
 }
