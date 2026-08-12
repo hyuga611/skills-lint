@@ -56,7 +56,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: hyuga611/skills-lint@v1
+      - uses: hyuga611/skills-lint@v0
         with:
           paths: .claude/skills   # optional; defaults to .claude/skills / skills
 ```
