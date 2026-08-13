@@ -1,6 +1,6 @@
 {
   "name": "@hyuga/skills-lint",
-  "version": "0.7.3",
+  "version": "0.8.0",
   "description": "Lint Anthropic Agent Skills (SKILL.md) in CI: referential integrity of referenced files + name/trigger collisions between skills. Language-agnostic, zero-dependency.",
   "type": "module",
   "main": "src/check.mjs",

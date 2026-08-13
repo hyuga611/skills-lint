@@ -13,6 +13,16 @@ import { readFileSync, existsSync, readdirSync, statSync, realpathSync } from 'n
 import { resolve, join, dirname, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+// Read rather than hardcoded: a version constant is one more place a release has to
+// remember, and the one that nobody notices going stale.
+const VERSION = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+  } catch {
+    return 'unknown';
+  }
+})();
+
 const CODE_EXT =
   /\.(m?[jt]sx?|json|ya?ml|toml|md|txt|sh|py|rb|go|rs|php|html?|css|lock|env|cfg|ini|xml|svg|png|jpe?g|gif|webp|pdf|csv)$/i;
 
@@ -480,6 +490,7 @@ function collectRefMarkdown(skillDir) {
 /** argv から --threshold / --allow を取り出し、残りをパスとして返す。 */
 export function parseArgs(argv) {
   const paths = [];
+  const unknown = [];
   const allow = new Set();
   let threshold = process.env.SKILLS_LINT_THRESHOLD ? parseFloat(process.env.SKILLS_LINT_THRESHOLD) : undefined;
   const addAllow = (s) =>
@@ -493,10 +504,14 @@ export function parseArgs(argv) {
     else if (a.startsWith('--threshold=')) threshold = parseFloat(a.slice(12));
     else if (a === '--allow') addAllow(argv[++i]);
     else if (a.startsWith('--allow=')) addAllow(a.slice(8));
+    // A token starting with "-" is never a path. Letting one through as a path is
+    // how a mistyped CI flag turned this linter off: it scanned a directory that
+    // did not exist, found nothing, and exited 0 with the check still green.
+    else if (a.startsWith('-')) unknown.push(a);
     else paths.push(a);
   }
   if (Number.isNaN(threshold)) threshold = undefined;
-  return { paths, threshold, allow };
+  return { paths, unknown, threshold, allow };
 }
 
 function report(file, findings, inActions) {
@@ -510,9 +525,34 @@ function report(file, findings, inActions) {
   return findings.length;
 }
 
+const HELP = `skills-lint ${VERSION} — SKILL.md reference integrity and trigger collisions
+
+  skills-lint [path ...]    a SKILL.md, or a directory holding them
+                            default: .claude/skills/ then skills/
+
+  --threshold <0..1>        how close two descriptions may be before it is a collision
+  --allow a,b               skill names allowed to collide (or SKILLS_LINT_THRESHOLD)
+  -h, --help  ·  -v, --version
+
+  exit 0 nothing to fix (or nothing to check) / 1 findings / 2 could not run
+`;
+
 export function main(argv) {
+  if (argv.includes('--help') || argv.includes('-h')) {
+    process.stdout.write(HELP);
+    return 0;
+  }
+  if (argv.includes('--version') || argv.includes('-v')) {
+    process.stdout.write(VERSION + '\n');
+    return 0;
+  }
   const inActions = process.env.GITHUB_ACTIONS === 'true';
-  const { paths, threshold, allow } = parseArgs(argv);
+  const { paths, unknown, threshold, allow } = parseArgs(argv);
+  if (unknown.length) {
+    console.error(`skills-lint: unknown option ${unknown.join(', ')}`);
+    console.error('skills-lint: run with --help to see what it takes');
+    return 2;
+  }
   const files = findSkillFiles(paths.length ? paths : defaultTargets());
   if (files.length === 0) {
     console.log('skills-lint: no SKILL.md found (looked in .claude/skills/ and skills/; pass a path to override) — skipping.');
