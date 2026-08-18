@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.9.0
+
+dev.to のコメントをきっかけに、姉妹ツール（carrylint）で3回続けて出た誤検知の形——
+**テキスト規則は「言及」を見ていて「実行」を見ていない。危険なものほど、丁寧な書き手が
+declare/forbid/scope するために言及する**——を、こちらにも当てて敵対的に入力を作らせた。
+2件出た。片方は**誤検知ではなく見逃し**で、こちらの方が質が悪い。
+
+### 🔴 禁止文が、本物の壊れた参照を黙らせていた
+
+「作ると書いてあるファイルは同梱されていなくて当然」という除外は `PRODUCES` で判定する。
+これは `generat` などの語幹で当たるので、**`Never generate \`out.json\`` という禁止文が
+「このスキルは out.json を作る」という宣言として読まれていた。**
+
+成果物として登録されると、その名前への参照は文書中のどこにあっても除外される。つまり:
+
+```markdown
+Never generate `scripts/missing.py`.
+When asked to deploy, execute `scripts/missing.py`.   ← 本物の壊れた参照
+```
+
+が **`✓ all clean`** になっていた。誤検知なら見えるが、**出なかった警告は見えない**。
+
+- 禁止文は「作る」の宣言として数えない。
+- 禁止文の行そのものも参照として報告しない。消えたファイルを「使うな」と明記するのは
+  正しい書き方で、それを壊れた参照として出すと**明記した人だけが損をする**。
+- 本当に「書き出す→後で読み返す」と書いてある成果物の除外は従来どおり（回帰テスト済み）。
+
+### 排他を明記した description どうしが 1.00 類似になっていた
+
+`description` は「いつ発火するか」を書く欄で、衝突判定はその発火面を比べている。
+ところが「〜には使うな」という否定節まで同じ袋に入れていたため、**互いを明示的に
+除外し合っている2つのスキルほど似て見えた**:
+
+```yaml
+description: Use for production deployment requests. Never use for staging deployment requests.
+description: Use for staging deployment requests. Never use for production deployment requests.
+```
+
+これで `1.00 similar`。トリガが排他だと書いた人が衝突として報告される、逆向きの結果だった。
+
+- `triggerSurface()` を追加し、否定節を落としてから比較する。否定節はアンチトリガで、
+  発火面ではない。本当に近いトリガの検出は従来どおり（回帰テスト済み）。
+
 ## 0.7.3
 
 - **`npm i -g` や `npx` で入れた CLI が、何もせずに終了していた。** 入口判定が `process.argv[1]` を

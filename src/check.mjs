@@ -135,6 +135,14 @@ export function looksLikePath(t) {
  */
 const PRODUCES = /\b(creat|writ|sav|generat|output|export|produc|store|append|render)\w*\b|作成|生成|保存|出力|書き出/i;
 
+// 「やるな」と書いてある行。PRODUCES は "generat" 等の語幹で当てるので、
+// "Never generate out.json" のような禁止文が「作る」の宣言として読まれていた。
+// 成果物として登録されると、その名前への本物の参照が文書中のどこにあっても黙る。
+// 誤検知ではなく見逃しになるぶん質が悪い（出なかった警告は見えない）。
+// 同時に、消えたファイルを「使うな」と明記した行そのものも参照として報告しない。
+// carrylint 0.4.1 の同名の除外と同じ考え方（語彙も揃えてある）。
+const PROHIBITION = /\b(?:never|do not|don't|doesn't|must not|should not|avoid|prohibited|forbidden|no need to)\b|禁止|するな|しないで|してはいけない|不可/i;
+
 /**
  * 「これはスキル同梱物のパスとして書かれている」と言えるか。
  * 拡張子が無いものは、先頭ディレクトリが実在するときだけパスとして扱う
@@ -186,7 +194,7 @@ export function scanRefs(text, exists = () => true, existsLocal = exists) {
   // (16 of 80 findings in the openclaw/openclaw audit, 2026-08 — the largest single class.)
   const produced = new Set();
   for (const line of lines) {
-    if (!PRODUCES.test(line)) continue;
+    if (!PRODUCES.test(line) || PROHIBITION.test(line)) continue;
     for (const m of line.matchAll(/`([^`]+)`/g)) {
       const t = m[1].trim();
       if (looksLikePath(t)) produced.add(t.replace(/^\.\//, '').split('::')[0].replace(/[#?].*$/, ''));
@@ -208,6 +216,9 @@ export function scanRefs(text, exists = () => true, existsLocal = exists) {
       }
       if (inFence) return;
       // 1) バッククォート `path`
+      // 禁止文は手順ではない。消えたファイルを「使うな」と書くのは正しい書き方で、
+      // それを壊れた参照として報告すると、明記した人だけが損をする。
+      if (PROHIBITION.test(line)) return;
       const produces = PRODUCES.test(line);
       for (const m of line.matchAll(/`([^`]+)`/g)) {
         const t = m[1].trim();
@@ -361,6 +372,21 @@ export function checkSkill({ hasFrontmatter, data = {}, body = '', exists = () =
   return findings;
 }
 
+/**
+ * description のうち「いつ発火するか」を書いている部分だけを返す。
+ *
+ * 衝突判定はトリガの取り違えを見るものなので、比べる相手は発火面でなければならない。
+ * ところが「〜には使うな」という否定節も同じ袋に入っていたため、互いを明示的に
+ * 除外し合っている2つのスキルほど似て見えていた（排他を書くと 1.00 になる）。
+ * 否定節はアンチトリガで、発火面ではない。
+ */
+export function triggerSurface(s) {
+  const clauses = String(s || '').split(/(?<=[.。!?！？])\s*/);
+  const positive = clauses.filter((c) => c.trim() && !PROHIBITION.test(c));
+  // 全部が否定節なら発火面が無い＝比較対象にならない（jaccard は 0 を返す）。
+  return positive.join(' ');
+}
+
 /** 文字バイグラム集合（空白除去・言語非依存＝日本語のトリガ文にも効く）。 */
 export function bigrams(s) {
   s = String(s || '').toLowerCase().replace(/\s+/g, '');
@@ -397,7 +423,7 @@ export function detectCollisions(skills, opts = {}) {
       byName.set(n, s.file);
     }
   }
-  const grams = skills.map((s) => bigrams(s.data && s.data.description));
+  const grams = skills.map((s) => bigrams(triggerSurface(s.data && s.data.description)));
   for (let i = 0; i < skills.length; i++) {
     for (let j = i + 1; j < skills.length; j++) {
       const ni = skills[i].data && skills[i].data.name;

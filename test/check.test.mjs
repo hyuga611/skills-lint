@@ -273,3 +273,48 @@ test('スキルが作るファイルは同梱物として要求しない', () =>
   // 「読め」と書いてあるものは従来どおり同梱物として検査する
   assert.equal(scanRefs('See `references/guide.md` for details.', () => false).length, 1);
 });
+
+// 「作ると書いてあるファイルは同梱されていなくて当然」の除外は、PRODUCES を行単位で
+// 当てて決めている。ところが `Never generate ...` の "generat" も PRODUCES に当たるので、
+// **禁止文が「このスキルが作る成果物」の宣言として読まれていた。**
+//
+// 結果は誤検知ではなく逆で、そのファイルへの本物の参照が文書中のどこにあっても黙る。
+// 出なかった警告は見えないので、誤検知より質が悪い。
+// carrylint 0.4.1 と同じ形（禁止を書いた人が損をする）だが、向きが逆に出た例。
+test('禁止文は「作る」の宣言ではない——本物の壊れた参照を黙らせない', () => {
+  const body = 'Never generate `scripts/missing.py`.\nWhen asked to deploy, execute `scripts/missing.py`.';
+  const f = scanRefs(body, () => false);
+  assert.equal(f.length, 1, '実行しろと書いてある行は報告されること');
+  assert.equal(f[0].ln, 2, '報告するのは禁止文の行ではなく実行を指示している行');
+});
+
+test('禁止文そのものは報告しない（消えたファイルを「使うな」と書くのは正しい）', () => {
+  const f = scanRefs('Never execute `scripts/legacy-deploy.py`; it was removed after the migration.', () => false);
+  assert.deepEqual(f, [], '禁止を明記した人が警告されないこと');
+});
+
+test('本当に作ると書いてある成果物は、これまでどおり後から読み返せる', () => {
+  const body = 'Write the results to `failures.json`.\nLater, read `failures.json` back.';
+  assert.deepEqual(scanRefs(body, () => false), [], '生成物の読み返しは除外されたまま');
+});
+
+// description は「いつ発火するか」を書く欄で、トリガの衝突判定はその発火面を比べている。
+// ところが「〜には使うな」という否定節も同じ袋に入っていたため、**互いを明示的に
+// 除外し合っている2つのスキルほど似て見えた**（排他を書くと 1.00 になる）。
+// 否定節はアンチトリガなので、発火面ではない。
+test('互いを明示的に除外し合う description は衝突ではない', () => {
+  const skills = [
+    { file: 'production-deploy/SKILL.md', data: { name: 'production-deploy', description: 'Use for production deployment requests. Never use for staging deployment requests.' } },
+    { file: 'staging-deploy/SKILL.md', data: { name: 'staging-deploy', description: 'Use for staging deployment requests. Never use for production deployment requests.' } },
+  ];
+  const f = detectCollisions(skills);
+  assert.deepEqual(f, [], '排他を明記した人が衝突として報告されないこと');
+});
+
+test('否定節を外しても、本当に近いトリガは従来どおり衝突する', () => {
+  const skills = [
+    { file: 'a/SKILL.md', data: { name: 'a', description: 'Use when the user asks to extract text from PDF files.' } },
+    { file: 'b/SKILL.md', data: { name: 'b', description: 'Use when the user asks to extract text from PDF files quickly.' } },
+  ];
+  assert.equal(detectCollisions(skills).length, 1, '近すぎる description は引き続き検出されること');
+});
